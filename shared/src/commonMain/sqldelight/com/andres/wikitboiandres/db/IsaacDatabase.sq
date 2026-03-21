@@ -1,0 +1,12 @@
+CREATE TABLE IsaacItem (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL
+);
+
+insertItem:
+INSERT OR REPLACE INTO IsaacItem(id, name, description)
+VALUES (?, ?, ?);
+
+selectAllItems:
+SELECT * FROM IsaacItem;
