@@ -12,9 +12,12 @@ class MainActivity : ComponentActivity() {
         
         // Inicializamos el driver y la base de datos
         val driver = DriverFactory(this).createDriver()
+        
+        // Al haber simplificado el .sq, ya no necesitamos pasar adaptadores
         val database = IsaacDatabase(driver)
         
         setContent {
+            // Llamamos a la función App del módulo compartido
             App(database)
         }
     }
