@@ -31,6 +31,7 @@ private class IsaacDatabaseImpl(
           |CREATE TABLE Personajes (
           |    id INTEGER PRIMARY KEY,
           |    nombre TEXT NOT NULL,
+          |    descripcion TEXT,
           |    es_tainted INTEGER DEFAULT 0,
           |    metodo_desbloqueo TEXT
           |)
@@ -40,7 +41,8 @@ private class IsaacDatabaseImpl(
           |    id INTEGER PRIMARY KEY,
           |    nombre TEXT NOT NULL,
           |    descripcion TEXT NOT NULL,
-          |    tipo TEXT
+          |    tipo TEXT,
+          |    calidad INTEGER DEFAULT 0
           |)
           """.trimMargin(), 0)
       driver.execute(null, """
@@ -55,7 +57,17 @@ private class IsaacDatabaseImpl(
       driver.execute(null, """
           |CREATE TABLE Estadisticas_Personaje (
           |    personaje_id INTEGER PRIMARY KEY,
-          |    salud TEXT NOT NULL,
+          |
+          |    -- NUEVO SISTEMA DE SALUD
+          |    corazones_rojos INTEGER NOT NULL DEFAULT 0,
+          |    corazones_alma INTEGER NOT NULL DEFAULT 0,
+          |    corazones_negros INTEGER NOT NULL DEFAULT 0,
+          |    corazones_hueso INTEGER NOT NULL DEFAULT 0,
+          |    corazones_moneda INTEGER NOT NULL DEFAULT 0,
+          |    manto_sagrado INTEGER DEFAULT 0, -- Para The Lost
+          |    salud_aleatoria INTEGER DEFAULT 0, -- Para Eden
+          |
+          |    -- Resto de estadísticas
           |    velocidad REAL NOT NULL,
           |    lagrimas REAL NOT NULL,
           |    dano REAL NOT NULL,
@@ -83,13 +95,13 @@ private class IsaacDatabaseImpl(
           |CREATE TABLE Transformaciones (
           |    id INTEGER PRIMARY KEY,
           |    nombre TEXT NOT NULL,
-          |    desc_efecto TEXT NOT NULL
+          |    descripcion TEXT NOT NULL
           |)
           """.trimMargin(), 0)
       driver.execute(null, """
           |CREATE TABLE Transformacion_Objeto (
-          |    objeto_id INTEGER NOT NULL,
           |    transformacion_id INTEGER NOT NULL,
+          |    objeto_id INTEGER NOT NULL,
           |    PRIMARY KEY (objeto_id, transformacion_id),
           |    FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE CASCADE,
           |    FOREIGN KEY (transformacion_id) REFERENCES Transformaciones(id) ON DELETE CASCADE
@@ -102,16 +114,27 @@ private class IsaacDatabaseImpl(
           |)
           """.trimMargin(), 0)
       driver.execute(null, """
+          |CREATE TABLE Logros (
+          |    id INTEGER PRIMARY KEY,
+          |    nombre TEXT NOT NULL,
+          |    descripcion TEXT NOT NULL,
+          |    desbloqueado INTEGER DEFAULT 0,
+          |    desbloquea_personaje_id INTEGER,
+          |    desbloquea_objeto_id INTEGER,
+          |    desbloquea_consumible_id INTEGER,
+          |    FOREIGN KEY (desbloquea_personaje_id) REFERENCES Personajes(id) ON DELETE SET NULL,
+          |    FOREIGN KEY (desbloquea_objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL
+          |)
+          """.trimMargin(), 0)
+      driver.execute(null, """
           |CREATE TABLE Desbloqueos (
           |    personaje_id INTEGER NOT NULL,
           |    marca_id INTEGER NOT NULL,
-          |    objeto_id INTEGER,
-          |    consumible_id INTEGER,
+          |    logro_id INTEGER,
           |    PRIMARY KEY (personaje_id, marca_id),
           |    FOREIGN KEY (personaje_id) REFERENCES Personajes(id) ON DELETE CASCADE,
           |    FOREIGN KEY (marca_id) REFERENCES Marcas(id) ON DELETE CASCADE,
-          |    FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL,
-          |    FOREIGN KEY (consumible_id) REFERENCES Consumibles(id) ON DELETE SET NULL
+          |    FOREIGN KEY (logro_id) REFERENCES Logros(id) ON DELETE SET NULL
           |)
           """.trimMargin(), 0)
       return QueryResult.Unit

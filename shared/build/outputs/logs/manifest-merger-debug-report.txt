@@ -1,16 +1,16 @@
 -- Merging decision tree log ---
 manifest
-ADDED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml:2:13-83
-INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml:2:13-83
+ADDED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml:2:13-83
+INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml:2:13-83
 	package
-		INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml
+		INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml
 	xmlns:android
-		ADDED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml:2:23-81
+		ADDED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml:2:23-81
 uses-sdk
-INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml reason: use-sdk injection requested
-INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml
-INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml
+INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml reason: use-sdk injection requested
+INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml
+INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml
 	android:targetSdkVersion
-		INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml
+		INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml
 	android:minSdkVersion
-		INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest15571257254195985974.xml
+		INJECTED from C:\Androiddd\WikiTBOIandres\shared\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest8925061256978585694.xml

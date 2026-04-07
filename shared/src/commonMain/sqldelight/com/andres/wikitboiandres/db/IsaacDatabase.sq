@@ -1,3 +1,5 @@
+import kotlin.Boolean;
+
 -- =======================================================
 -- ESQUEMA DE BASE DE DATOS: THE BINDING OF ISAAC WIKI
 -- =======================================================
@@ -6,6 +8,7 @@
 CREATE TABLE Personajes (
     id INTEGER PRIMARY KEY,
     nombre TEXT NOT NULL,
+    descripcion TEXT,
     es_tainted INTEGER DEFAULT 0,
     metodo_desbloqueo TEXT
 );
@@ -15,7 +18,8 @@ CREATE TABLE Objetos (
     id INTEGER PRIMARY KEY,
     nombre TEXT NOT NULL,
     descripcion TEXT NOT NULL,
-    tipo TEXT
+    tipo TEXT,
+    calidad INTEGER DEFAULT 0
 );
 
 -- 3. TABLA: CONSUMIBLES
@@ -27,10 +31,19 @@ CREATE TABLE Consumibles (
     PRIMARY KEY (id, tipo) -- Clave compuesta para evitar que se pisen Cartas/Pills/Trinkets
 );
 
--- 4. TABLA: ESTADISTICAS_PERSONAJE
 CREATE TABLE Estadisticas_Personaje (
     personaje_id INTEGER PRIMARY KEY,
-    salud TEXT NOT NULL,
+
+    -- NUEVO SISTEMA DE SALUD
+    corazones_rojos INTEGER NOT NULL DEFAULT 0,
+    corazones_alma INTEGER NOT NULL DEFAULT 0,
+    corazones_negros INTEGER NOT NULL DEFAULT 0,
+    corazones_hueso INTEGER NOT NULL DEFAULT 0,
+    corazones_moneda INTEGER NOT NULL DEFAULT 0,
+    manto_sagrado INTEGER AS Boolean DEFAULT 0, -- Para The Lost
+    salud_aleatoria INTEGER AS Boolean DEFAULT 0, -- Para Eden
+
+    -- Resto de estadísticas
     velocidad REAL NOT NULL,
     lagrimas REAL NOT NULL,
     dano REAL NOT NULL,
@@ -43,7 +56,6 @@ CREATE TABLE Estadisticas_Personaje (
     FOREIGN KEY (objeto_inicial_id) REFERENCES Objetos(id) ON DELETE SET NULL,
     FOREIGN KEY (consumible_inicial_id) REFERENCES Consumibles(id) ON DELETE SET NULL
 );
-
 -- 5. TABLA: SINERGIAS
 CREATE TABLE Sinergias (
     obj_a_id INTEGER NOT NULL,
@@ -58,13 +70,13 @@ CREATE TABLE Sinergias (
 CREATE TABLE Transformaciones (
     id INTEGER PRIMARY KEY,
     nombre TEXT NOT NULL,
-    desc_efecto TEXT NOT NULL
+    descripcion TEXT NOT NULL
 );
 
 -- 7. TABLA: TRANSFORMACION_OBJETO
 CREATE TABLE Transformacion_Objeto (
-    objeto_id INTEGER NOT NULL,
     transformacion_id INTEGER NOT NULL,
+    objeto_id INTEGER NOT NULL,
     PRIMARY KEY (objeto_id, transformacion_id),
     FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE CASCADE,
     FOREIGN KEY (transformacion_id) REFERENCES Transformaciones(id) ON DELETE CASCADE
@@ -76,34 +88,51 @@ CREATE TABLE Marcas (
     nombre TEXT NOT NULL
 );
 
--- 9. TABLA: DESBLOQUEOS
+-- 9. TABLA: LOGROS
+CREATE TABLE Logros (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    desbloqueado INTEGER AS Boolean DEFAULT 0,
+    desbloquea_personaje_id INTEGER,
+    desbloquea_objeto_id INTEGER,
+    desbloquea_consumible_id INTEGER,
+    FOREIGN KEY (desbloquea_personaje_id) REFERENCES Personajes(id) ON DELETE SET NULL,
+    FOREIGN KEY (desbloquea_objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL
+);
+
+-- 10. TABLA: DESBLOQUEOS
 CREATE TABLE Desbloqueos (
     personaje_id INTEGER NOT NULL,
     marca_id INTEGER NOT NULL,
-    objeto_id INTEGER,
-    consumible_id INTEGER,
+    logro_id INTEGER,
     PRIMARY KEY (personaje_id, marca_id),
     FOREIGN KEY (personaje_id) REFERENCES Personajes(id) ON DELETE CASCADE,
     FOREIGN KEY (marca_id) REFERENCES Marcas(id) ON DELETE CASCADE,
-    FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL,
-    FOREIGN KEY (consumible_id) REFERENCES Consumibles(id) ON DELETE SET NULL
+    FOREIGN KEY (logro_id) REFERENCES Logros(id) ON DELETE SET NULL
 );
 
 -- QUERIES PARA PERSONAJES
 insertPersonaje:
-INSERT OR REPLACE INTO Personajes(id, nombre, es_tainted, metodo_desbloqueo)
-VALUES (?, ?, ?, ?);
+INSERT OR REPLACE INTO Personajes(id, nombre, descripcion, es_tainted, metodo_desbloqueo)
+VALUES (?, ?, ?, ?, ?);
 
 selectAllPersonajes:
 SELECT * FROM Personajes;
 
+getPersonajeById:
+SELECT * FROM Personajes WHERE id = ?;
+
 -- QUERIES PARA OBJETOS
 insertObjeto:
-INSERT OR REPLACE INTO Objetos(id, nombre, descripcion, tipo)
-VALUES (?, ?, ?, ?);
+INSERT OR REPLACE INTO Objetos(id, nombre, descripcion, tipo, calidad)
+VALUES (?, ?, ?, ?, ?);
 
 selectAllObjetos:
 SELECT * FROM Objetos;
+
+getObjetoById:
+SELECT * FROM Objetos WHERE id = ?;
 
 -- QUERIES PARA CONSUMIBLES
 insertConsumible:
@@ -113,6 +142,12 @@ VALUES (?, ?, ?, ?);
 selectAllConsumibles:
 SELECT * FROM Consumibles;
 
+getConsumibleById:
+SELECT * FROM Consumibles WHERE id = ? LIMIT 1;
+
+getConsumibleByIdAndType:
+SELECT * FROM Consumibles WHERE id = ? AND tipo = ?;
+
 -- QUERIES PARA MARCAS
 insertMarca:
 INSERT OR REPLACE INTO Marcas(id, nombre)
@@ -121,28 +156,68 @@ VALUES (?, ?);
 selectAllMarcas:
 SELECT * FROM Marcas;
 
+-- QUERIES PARA LOGROS
+insertLogro:
+INSERT OR REPLACE INTO Logros(id, nombre, descripcion, desbloqueado, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateLogroStatus:
+UPDATE Logros SET desbloqueado = ? WHERE id = ?;
+
+selectAllLogros:
+SELECT * FROM Logros;
+
+getLogroById:
+SELECT * FROM Logros WHERE id = ?;
+
 -- QUERIES PARA DESBLOQUEOS
 insertDesbloqueo:
-INSERT OR REPLACE INTO Desbloqueos(personaje_id, marca_id, objeto_id, consumible_id)
-VALUES (?, ?, ?, ?);
+INSERT OR REPLACE INTO Desbloqueos(personaje_id, marca_id, logro_id)
+VALUES (?, ?, ?);
 
 getDesbloqueosByPersonaje:
 SELECT
     Personajes.nombre AS personajeNombre,
+    Marcas.id AS marcaId,
     Marcas.nombre AS marcaNombre,
-    Objetos.nombre AS objetoNombre,
-    Consumibles.nombre AS consumibleNombre
+    Logros.nombre AS logroNombre,
+    Logros.id AS logroId,
+    Logros.desbloquea_objeto_id AS objetoId,
+    Logros.desbloquea_consumible_id AS consumibleId,
+    Logros.desbloquea_personaje_id AS pId,
+    Consumibles.tipo AS consumibleTipo
 FROM Desbloqueos
 JOIN Personajes ON Desbloqueos.personaje_id = Personajes.id
 JOIN Marcas ON Desbloqueos.marca_id = Marcas.id
-LEFT JOIN Objetos ON Desbloqueos.objeto_id = Objetos.id
-LEFT JOIN Consumibles ON Desbloqueos.consumible_id = Consumibles.id
+LEFT JOIN Logros ON Desbloqueos.logro_id = Logros.id
+LEFT JOIN Consumibles ON Logros.desbloquea_consumible_id = Consumibles.id
 WHERE Desbloqueos.personaje_id = ?;
 
 -- QUERIES PARA ESTADISTICAS
 insertEstadisticas:
-INSERT OR REPLACE INTO Estadisticas_Personaje(personaje_id, salud, velocidad, lagrimas, dano, rango, velocidad_disparo, suerte, objeto_inicial_id, consumible_inicial_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO Estadisticas_Personaje(
+    personaje_id, corazones_rojos, corazones_alma, corazones_negros, corazones_hueso, corazones_moneda,
+    manto_sagrado, salud_aleatoria, velocidad, lagrimas, dano, rango, velocidad_disparo, suerte,
+    objeto_inicial_id, consumible_inicial_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 getEstadisticasByPersonaje:
 SELECT * FROM Estadisticas_Personaje WHERE personaje_id = ?;
+
+-- QUERIES PARA TRANSFORMACIONES
+insertTransformacion:
+INSERT OR REPLACE INTO Transformaciones(id, nombre, descripcion)
+VALUES (?, ?, ?);
+
+selectAllTransformaciones:
+SELECT * FROM Transformaciones;
+
+insertTransformacionObjeto:
+INSERT OR REPLACE INTO Transformacion_Objeto(transformacion_id, objeto_id)
+VALUES (?, ?);
+
+getObjetosByTransformacion:
+SELECT Objetos.* FROM Objetos
+JOIN Transformacion_Objeto ON Objetos.id = Transformacion_Objeto.objeto_id
+WHERE Transformacion_Objeto.transformacion_id = ?;
