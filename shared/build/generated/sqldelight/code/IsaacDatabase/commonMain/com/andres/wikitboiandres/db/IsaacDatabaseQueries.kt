@@ -129,25 +129,28 @@ public class IsaacDatabaseQueries(
   }
 
   public fun <T : Any> selectAllConsumibles(mapper: (
+    uid: Long,
     id: Long,
     nombre: String,
     descripcion: String,
     tipo: String,
   ) -> T): Query<T> = Query(-1_334_684_882, arrayOf("Consumibles"), driver, "IsaacDatabase.sq",
       "selectAllConsumibles",
-      "SELECT Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles") {
+      "SELECT Consumibles.uid, Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles") {
       cursor ->
     mapper(
       cursor.getLong(0)!!,
-      cursor.getString(1)!!,
+      cursor.getLong(1)!!,
       cursor.getString(2)!!,
-      cursor.getString(3)!!
+      cursor.getString(3)!!,
+      cursor.getString(4)!!
     )
   }
 
-  public fun selectAllConsumibles(): Query<Consumibles> = selectAllConsumibles { id, nombre,
+  public fun selectAllConsumibles(): Query<Consumibles> = selectAllConsumibles { uid, id, nombre,
       descripcion, tipo ->
     Consumibles(
+      uid,
       id,
       nombre,
       descripcion,
@@ -156,6 +159,7 @@ public class IsaacDatabaseQueries(
   }
 
   public fun <T : Any> getConsumibleById(id: Long, mapper: (
+    uid: Long,
     id: Long,
     nombre: String,
     descripcion: String,
@@ -163,16 +167,45 @@ public class IsaacDatabaseQueries(
   ) -> T): Query<T> = GetConsumibleByIdQuery(id) { cursor ->
     mapper(
       cursor.getLong(0)!!,
-      cursor.getString(1)!!,
+      cursor.getLong(1)!!,
       cursor.getString(2)!!,
-      cursor.getString(3)!!
+      cursor.getString(3)!!,
+      cursor.getString(4)!!
     )
   }
 
-  public fun getConsumibleById(id: Long): Query<Consumibles> = getConsumibleById(id) { id_, nombre,
-      descripcion, tipo ->
+  public fun getConsumibleById(id: Long): Query<Consumibles> = getConsumibleById(id) { uid, id_,
+      nombre, descripcion, tipo ->
     Consumibles(
+      uid,
       id_,
+      nombre,
+      descripcion,
+      tipo
+    )
+  }
+
+  public fun <T : Any> getConsumibleByUid(uid: Long, mapper: (
+    uid: Long,
+    id: Long,
+    nombre: String,
+    descripcion: String,
+    tipo: String,
+  ) -> T): Query<T> = GetConsumibleByUidQuery(uid) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getLong(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!
+    )
+  }
+
+  public fun getConsumibleByUid(uid: Long): Query<Consumibles> = getConsumibleByUid(uid) { uid_, id,
+      nombre, descripcion, tipo ->
+    Consumibles(
+      uid_,
+      id,
       nombre,
       descripcion,
       tipo
@@ -183,6 +216,7 @@ public class IsaacDatabaseQueries(
     id: Long,
     tipo: String,
     mapper: (
+      uid: Long,
       id: Long,
       nombre: String,
       descripcion: String,
@@ -191,15 +225,17 @@ public class IsaacDatabaseQueries(
   ): Query<T> = GetConsumibleByIdAndTypeQuery(id, tipo) { cursor ->
     mapper(
       cursor.getLong(0)!!,
-      cursor.getString(1)!!,
+      cursor.getLong(1)!!,
       cursor.getString(2)!!,
-      cursor.getString(3)!!
+      cursor.getString(3)!!,
+      cursor.getString(4)!!
     )
   }
 
   public fun getConsumibleByIdAndType(id: Long, tipo: String): Query<Consumibles> =
-      getConsumibleByIdAndType(id, tipo) { id_, nombre, descripcion, tipo_ ->
+      getConsumibleByIdAndType(id, tipo) { uid, id_, nombre, descripcion, tipo_ ->
     Consumibles(
+      uid,
       id_,
       nombre,
       descripcion,
@@ -292,12 +328,48 @@ public class IsaacDatabaseQueries(
     )
   }
 
+  public fun <T : Any> getLogrosByRewardObjeto(desbloquea_objeto_id: Long?, mapper: (
+    id: Long,
+    nombre: String,
+    descripcion: String,
+    desbloqueado: Boolean?,
+    desbloquea_personaje_id: Long?,
+    desbloquea_objeto_id: Long?,
+    desbloquea_consumible_id: Long?,
+  ) -> T): Query<T> = GetLogrosByRewardObjetoQuery(desbloquea_objeto_id) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getBoolean(3),
+      cursor.getLong(4),
+      cursor.getLong(5),
+      cursor.getLong(6)
+    )
+  }
+
+  public fun getLogrosByRewardObjeto(desbloquea_objeto_id: Long?): Query<Logros> =
+      getLogrosByRewardObjeto(desbloquea_objeto_id) { id, nombre, descripcion, desbloqueado,
+      desbloquea_personaje_id, desbloquea_objeto_id_, desbloquea_consumible_id ->
+    Logros(
+      id,
+      nombre,
+      descripcion,
+      desbloqueado,
+      desbloquea_personaje_id,
+      desbloquea_objeto_id_,
+      desbloquea_consumible_id
+    )
+  }
+
   public fun <T : Any> getDesbloqueosByPersonaje(personaje_id: Long, mapper: (
     personajeNombre: String,
     marcaId: Long,
     marcaNombre: String,
     logroNombre: String?,
     logroId: Long?,
+    logroDescripcion: String?,
+    desbloqueado: Boolean?,
     objetoId: Long?,
     consumibleId: Long?,
     pId: Long?,
@@ -309,22 +381,26 @@ public class IsaacDatabaseQueries(
       cursor.getString(2)!!,
       cursor.getString(3),
       cursor.getLong(4),
-      cursor.getLong(5),
-      cursor.getLong(6),
+      cursor.getString(5),
+      cursor.getBoolean(6),
       cursor.getLong(7),
-      cursor.getString(8)
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10)
     )
   }
 
   public fun getDesbloqueosByPersonaje(personaje_id: Long): Query<GetDesbloqueosByPersonaje> =
       getDesbloqueosByPersonaje(personaje_id) { personajeNombre, marcaId, marcaNombre, logroNombre,
-      logroId, objetoId, consumibleId, pId, consumibleTipo ->
+      logroId, logroDescripcion, desbloqueado, objetoId, consumibleId, pId, consumibleTipo ->
     GetDesbloqueosByPersonaje(
       personajeNombre,
       marcaId,
       marcaNombre,
       logroNombre,
       logroId,
+      logroDescripcion,
+      desbloqueado,
       objetoId,
       consumibleId,
       pId,
@@ -446,6 +522,33 @@ public class IsaacDatabaseQueries(
     )
   }
 
+  public fun <T : Any> selectAllMaldiciones(mapper: (
+    id: Long,
+    nombre: String,
+    descripcion: String,
+    notas: String?,
+  ) -> T): Query<T> = Query(1_523_405_574, arrayOf("Maldiciones"), driver, "IsaacDatabase.sq",
+      "selectAllMaldiciones",
+      "SELECT Maldiciones.id, Maldiciones.nombre, Maldiciones.descripcion, Maldiciones.notas FROM Maldiciones") {
+      cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)
+    )
+  }
+
+  public fun selectAllMaldiciones(): Query<Maldiciones> = selectAllMaldiciones { id, nombre,
+      descripcion, notas ->
+    Maldiciones(
+      id,
+      nombre,
+      descripcion,
+      notas
+    )
+  }
+
   public fun insertPersonaje(
     id: Long?,
     nombre: String,
@@ -491,19 +594,21 @@ public class IsaacDatabaseQueries(
   }
 
   public fun insertConsumible(
+    uid: Long?,
     id: Long,
     nombre: String,
     descripcion: String,
     tipo: String,
   ) {
     driver.execute(960_758_639, """
-        |INSERT OR REPLACE INTO Consumibles(id, nombre, descripcion, tipo)
-        |VALUES (?, ?, ?, ?)
-        """.trimMargin(), 4) {
-          bindLong(0, id)
-          bindString(1, nombre)
-          bindString(2, descripcion)
-          bindString(3, tipo)
+        |INSERT OR REPLACE INTO Consumibles(uid, id, nombre, descripcion, tipo)
+        |VALUES (?, ?, ?, ?, ?)
+        """.trimMargin(), 5) {
+          bindLong(0, uid)
+          bindLong(1, id)
+          bindString(2, nombre)
+          bindString(3, descripcion)
+          bindString(4, tipo)
         }
     notifyQueries(960_758_639) { emit ->
       emit("Consumibles")
@@ -656,6 +761,26 @@ public class IsaacDatabaseQueries(
     }
   }
 
+  public fun insertMaldicion(
+    id: Long?,
+    nombre: String,
+    descripcion: String,
+    notas: String?,
+  ) {
+    driver.execute(1_616_087_438, """
+        |INSERT OR REPLACE INTO Maldiciones(id, nombre, descripcion, notas)
+        |VALUES (?, ?, ?, ?)
+        """.trimMargin(), 4) {
+          bindLong(0, id)
+          bindString(1, nombre)
+          bindString(2, descripcion)
+          bindString(3, notas)
+        }
+    notifyQueries(1_616_087_438) { emit ->
+      emit("Maldiciones")
+    }
+  }
+
   private inner class GetPersonajeByIdQuery<out T : Any>(
     public val id: Long,
     mapper: (SqlCursor) -> T,
@@ -714,12 +839,34 @@ public class IsaacDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
         driver.executeQuery(-755_789_400,
-        """SELECT Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles WHERE id = ? LIMIT 1""",
+        """SELECT Consumibles.uid, Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles WHERE id = ? LIMIT 1""",
         mapper, 1) {
       bindLong(0, id)
     }
 
     override fun toString(): String = "IsaacDatabase.sq:getConsumibleById"
+  }
+
+  private inner class GetConsumibleByUidQuery<out T : Any>(
+    public val uid: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("Consumibles", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("Consumibles", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
+        driver.executeQuery(-1_954_623_133,
+        """SELECT Consumibles.uid, Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles WHERE uid = ?""",
+        mapper, 1) {
+      bindLong(0, uid)
+    }
+
+    override fun toString(): String = "IsaacDatabase.sq:getConsumibleByUid"
   }
 
   private inner class GetConsumibleByIdAndTypeQuery<out T : Any>(
@@ -737,7 +884,7 @@ public class IsaacDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
         driver.executeQuery(1_806_701_289,
-        """SELECT Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles WHERE id = ? AND tipo = ?""",
+        """SELECT Consumibles.uid, Consumibles.id, Consumibles.nombre, Consumibles.descripcion, Consumibles.tipo FROM Consumibles WHERE id = ? AND tipo = ?""",
         mapper, 2) {
       bindLong(0, id)
       bindString(1, tipo)
@@ -768,6 +915,28 @@ public class IsaacDatabaseQueries(
     override fun toString(): String = "IsaacDatabase.sq:getLogroById"
   }
 
+  private inner class GetLogrosByRewardObjetoQuery<out T : Any>(
+    public val desbloquea_objeto_id: Long?,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("Logros", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("Logros", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
+        driver.executeQuery(null,
+        """SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros WHERE desbloquea_objeto_id ${ if (desbloquea_objeto_id == null) "IS" else "=" } ?""",
+        mapper, 1) {
+      bindLong(0, desbloquea_objeto_id)
+    }
+
+    override fun toString(): String = "IsaacDatabase.sq:getLogrosByRewardObjeto"
+  }
+
   private inner class GetDesbloqueosByPersonajeQuery<out T : Any>(
     public val personaje_id: Long,
     mapper: (SqlCursor) -> T,
@@ -790,6 +959,8 @@ public class IsaacDatabaseQueries(
     |    Marcas.nombre AS marcaNombre,
     |    Logros.nombre AS logroNombre,
     |    Logros.id AS logroId,
+    |    Logros.descripcion AS logroDescripcion,
+    |    Logros.desbloqueado AS desbloqueado,
     |    Logros.desbloquea_objeto_id AS objetoId,
     |    Logros.desbloquea_consumible_id AS consumibleId,
     |    Logros.desbloquea_personaje_id AS pId,
@@ -798,7 +969,7 @@ public class IsaacDatabaseQueries(
     |JOIN Personajes ON Desbloqueos.personaje_id = Personajes.id
     |JOIN Marcas ON Desbloqueos.marca_id = Marcas.id
     |LEFT JOIN Logros ON Desbloqueos.logro_id = Logros.id
-    |LEFT JOIN Consumibles ON Logros.desbloquea_consumible_id = Consumibles.id
+    |LEFT JOIN Consumibles ON Logros.desbloquea_consumible_id = Consumibles.uid
     |WHERE Desbloqueos.personaje_id = ?
     """.trimMargin(), mapper, 1) {
       bindLong(0, personaje_id)

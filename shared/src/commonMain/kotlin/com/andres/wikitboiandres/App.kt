@@ -36,7 +36,7 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 import wikitboiandres.shared.generated.resources.Res
 
 enum class Screen {
-    Loading, Menu, Objetos, Personajes, SubMenuConsumibles, ConsumiblesPorTipo, DetalleObjeto, DetallePersonaje, DetalleConsumible, GlobalSearch, Transformaciones, DetalleTransformacion, Logros, DetalleLogro
+    Loading, Menu, Objetos, Personajes, SubMenuConsumibles, ConsumiblesPorTipo, DetalleObjeto, DetallePersonaje, DetalleConsumible, GlobalSearch, Transformaciones, DetalleTransformacion, Logros, DetalleLogro, Maldiciones, DetalleMaldicion
 }
 
 data class SearchItem(val id: Int, val nombre: String, val tipo: String, val original: Any)
@@ -57,10 +57,12 @@ fun App(database: IsaacDatabase) {
     var consumibles by remember { mutableStateOf(emptyList<RemoteConsumible>()) }
     var transformaciones by remember { mutableStateOf(emptyList<RemoteTransformacion>()) }
     var logros by remember { mutableStateOf(emptyList<RemoteLogro>()) }
+    var maldiciones by remember { mutableStateOf(emptyList<RemoteMaldicion>()) }
     
     var searchQueryObjetos by remember { mutableStateOf("") }
     var searchQueryConsumibles by remember { mutableStateOf("") }
     var searchQueryLogros by remember { mutableStateOf("") }
+    var searchQueryMaldiciones by remember { mutableStateOf("") }
     var searchQueryGlobal by remember { mutableStateOf("") }
 
     var isObjectsGridView by remember { mutableStateOf(false) }
@@ -83,12 +85,17 @@ fun App(database: IsaacDatabase) {
         if (searchQueryLogros.isEmpty()) logros else logros.filter { it.nombre.contains(searchQueryLogros, ignoreCase = true) }
     }
 
-    val allSearchItems = remember(objetos, personajes, consumibles, logros) {
+    val filteredMaldiciones = remember(maldiciones, searchQueryMaldiciones) {
+        if (searchQueryMaldiciones.isEmpty()) maldiciones else maldiciones.filter { it.nombre.contains(searchQueryMaldiciones, ignoreCase = true) }
+    }
+
+    val allSearchItems = remember(objetos, personajes, consumibles, logros, maldiciones) {
         val list = mutableListOf<SearchItem>()
         objetos.forEach { list.add(SearchItem(it.id, it.nombre, "Objeto", it)) }
         personajes.forEach { list.add(SearchItem(it.id, it.nombre, "Personaje", it)) }
         consumibles.forEach { list.add(SearchItem(it.id, it.nombre, it.tipo, it)) }
         logros.forEach { list.add(SearchItem(it.id, it.nombre, "Logro", it)) }
+        maldiciones.forEach { list.add(SearchItem(it.id, it.nombre, "Maldicion", it)) }
         list
     }
 
@@ -97,6 +104,7 @@ fun App(database: IsaacDatabase) {
     var selectedConsumible by remember { mutableStateOf<RemoteConsumible?>(null) }
     var selectedTransformacion by remember { mutableStateOf<RemoteTransformacion?>(null) }
     var selectedLogro by remember { mutableStateOf<RemoteLogro?>(null) }
+    var selectedMaldicion by remember { mutableStateOf<RemoteMaldicion?>(null) }
 
     LaunchedEffect(Unit) {
         try {
@@ -111,15 +119,16 @@ fun App(database: IsaacDatabase) {
                 repository.fetchAndSaveEstadisticas()
                 repository.fetchAndSaveTransformaciones()
                 repository.fetchAndSaveTransformacionObjeto()
-            } else if (repository.getAllLogrosCount() == 0L) {
-                repository.fetchAndSaveLogros()
-                repository.fetchAndSaveDesbloqueos()
+                repository.fetchAndSaveMaldiciones()
+            } else if (repository.getAllMaldicionesCount() == 0L) {
+                repository.fetchAndSaveMaldiciones()
             }
             objetos = repository.getAllObjetos()
             personajes = repository.getAllPersonajes()
             consumibles = repository.getAllConsumibles()
             transformaciones = repository.getAllTransformaciones()
             logros = repository.getAllLogros()
+            maldiciones = repository.getAllMaldiciones()
             currentScreen = Screen.Menu
         } catch (e: Exception) {
             status = "Error: ${e.message}"
@@ -259,6 +268,26 @@ fun App(database: IsaacDatabase) {
                         navigateTo(Screen.DetalleTransformacion)
                     }
                     Screen.Logros -> Column {
+                        val totalLogros = logros.size
+                        val unlockedLogros = logros.count { it.desbloqueado }
+                        val progress = if (totalLogros > 0) unlockedLogros.toFloat() / totalLogros else 0f
+
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "Progreso: $unlockedLogros / $totalLogros (${(progress * 100).toInt()}%)",
+                                color = Color.White,
+                                style = MaterialTheme.typography.subtitle1,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = progress,
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                color = orangeColor,
+                                backgroundColor = Color.DarkGray
+                            )
+                        }
+
                         SearchBar(searchQueryLogros) { searchQueryLogros = it }
                         ListScreen(
                             itemList = filteredLogros, 
@@ -286,8 +315,19 @@ fun App(database: IsaacDatabase) {
                             navigateTo(Screen.DetalleLogro)
                         }
                     }
-                    Screen.DetalleObjeto -> selectedObjeto?.let {
-                        DetailObjetoScreen(it)
+                    Screen.Maldiciones -> Column {
+                        SearchBar(searchQueryMaldiciones) { searchQueryMaldiciones = it }
+                        ListScreen(filteredMaldiciones, { it.nombre }, { it.descripcion.take(50) + "..." }, { getImagePath(it.id, "Maldicion") }, 56) {
+                            selectedMaldicion = it
+                            navigateTo(Screen.DetalleMaldicion)
+                        }
+                    }
+                    Screen.DetalleObjeto -> selectedObjeto?.let { obj ->
+                        val relatedLogros = remember(obj.id) { repository.getLogrosByRewardObjeto(obj.id) }
+                        DetailObjetoScreen(obj, relatedLogros) { logro ->
+                            selectedLogro = logro
+                            navigateTo(Screen.DetalleLogro)
+                        }
                     }
                     Screen.DetalleTransformacion -> selectedTransformacion?.let { trans ->
                         val objs = remember(trans.id) { repository.getObjetosByTransformacion(trans.id) }
@@ -320,9 +360,17 @@ fun App(database: IsaacDatabase) {
                             }
                         }
                     }
+                    Screen.DetalleMaldicion -> selectedMaldicion?.let { 
+                        DetailScreen(it.nombre, "Descripción", it.descripcion, "Notas", it.notas ?: "Sin notas adicionales", getImagePath(it.id, "Maldicion"))
+                    }
                     Screen.DetallePersonaje -> selectedPersonaje?.let { per ->
                         val desbloqueos = remember(per.id) { repository.getDesbloqueosByPersonaje(per.id) }
                         val stats = remember(per.id) { repository.getEstadisticasByPersonaje(per.id) }
+                        
+                        val currentIndex = personajes.indexOfFirst { it.id == per.id }
+                        val prevPersonaje = if (currentIndex > 0) personajes[currentIndex - 1] else null
+                        val nextPersonaje = if (currentIndex != -1 && currentIndex < personajes.size - 1) personajes[currentIndex + 1] else null
+
                         DetailPersonajeScreen(
                             nombre = per.nombre,
                             descripcion = per.descripcion,
@@ -331,6 +379,8 @@ fun App(database: IsaacDatabase) {
                             stats = stats,
                             desbloqueos = desbloqueos,
                             imageName = getImagePath(per.id, "Personaje"),
+                            prevPersonaje = prevPersonaje,
+                            nextPersonaje = nextPersonaje,
                             onPremioClick = { info ->
                                 if (info.logroId != null) {
                                     selectedLogro = repository.getLogroById(info.logroId)
@@ -351,7 +401,8 @@ fun App(database: IsaacDatabase) {
                                         navigateTo(Screen.DetalleConsumible)
                                     }
                                 }
-                            }
+                            },
+                            onNavigate = { selectedPersonaje = it }
                         )
                     }
                     Screen.DetalleConsumible -> selectedConsumible?.let {
@@ -378,6 +429,10 @@ fun App(database: IsaacDatabase) {
                                 is RemoteLogro -> {
                                     selectedLogro = item.original
                                     navigateTo(Screen.DetalleLogro)
+                                }
+                                is RemoteMaldicion -> {
+                                    selectedMaldicion = item.original
+                                    navigateTo(Screen.DetalleMaldicion)
                                 }
                             }
                         }
@@ -432,7 +487,7 @@ fun GlobalSearchScreen(
         
         if (query.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Escribe para buscar objetos, personajes, logros...", color = Color.Gray)
+                Text("Escribe para buscar objetos, personajes, logros, maldiciones...", color = Color.Gray)
             }
         } else if (filteredResults.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -474,6 +529,7 @@ fun getImagePath(id: Int, tipo: String): String? {
         "Carta" -> "Pickup_$id"
         "Transformacion" -> "Transformation_$id"
         "Logro" -> "Logro_$id"
+        "Maldicion" -> "Curse_$id"
         else -> null
     }
 }
@@ -489,7 +545,7 @@ fun QualityStars(calidad: Int, size: Int = 20) {
 }
 
 @Composable
-fun DetailObjetoScreen(objeto: RemoteObjeto) {
+fun DetailObjetoScreen(objeto: RemoteObjeto, relatedLogros: List<RemoteLogro>, onLogroClick: (RemoteLogro) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp).background(MaterialTheme.colors.background).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val imageName = getImagePath(objeto.id, "Objeto")
@@ -513,6 +569,22 @@ fun DetailObjetoScreen(objeto: RemoteObjeto) {
         
         Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
         Text(text = objeto.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+
+        if (relatedLogros.isNotEmpty()) {
+            Spacer(Modifier.height(32.dp))
+            Text(text = "Desbloqueos Relacionados:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+            Spacer(Modifier.height(8.dp))
+            relatedLogros.forEach { logro ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onLogroClick(logro) }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DynamicImage(getImagePath(logro.id, "Logro") ?: "", Modifier.size(40.dp).padding(end = 12.dp))
+                    Text(logro.nombre, color = Color.White, style = MaterialTheme.typography.body1)
+                }
+                Divider(color = Color.DarkGray.copy(alpha = 0.5f))
+            }
+        }
     }
 }
 
@@ -527,11 +599,19 @@ fun DetailLogroScreen(
     
     Column(Modifier.fillMaxSize().padding(16.dp).background(MaterialTheme.colors.background).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            DynamicImage(
-                name = getImagePath(logro.id, "Logro") ?: "", 
-                modifier = Modifier.size(80.dp).padding(end = 16.dp),
-                colorFilter = if (!logro.desbloqueado) grayScaleFilter else null
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(end = 16.dp)) {
+                DynamicImage(
+                    name = getImagePath(logro.id, "Logro") ?: "", 
+                    modifier = Modifier.size(80.dp),
+                    colorFilter = if (!logro.desbloqueado) grayScaleFilter else null
+                )
+                Text(
+                    text = "Secreto: ${logro.id}", 
+                    color = Color.Gray, 
+                    style = MaterialTheme.typography.caption,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Column(Modifier.weight(1f)) {
                 Text(logro.nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
             }
@@ -611,8 +691,13 @@ fun DetailPersonajeScreen(
     stats: RemoteEstadisticas?,
     desbloqueos: List<DesbloqueoInfo>, 
     imageName: String?,
-    onPremioClick: (DesbloqueoInfo) -> Unit
+    prevPersonaje: RemotePersonaje?,
+    nextPersonaje: RemotePersonaje?,
+    onPremioClick: (DesbloqueoInfo) -> Unit,
+    onNavigate: (RemotePersonaje) -> Unit
 ) {
+    val grayScaleFilter = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
+
     Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (imageName != null) {
@@ -656,15 +741,65 @@ fun DetailPersonajeScreen(
                 Modifier
                     .fillMaxWidth()
                     .clickable { if(info.logroId != null || info.premioId > 0) onPremioClick(info) }
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("• ${info.marcaNombre}: ", fontWeight = FontWeight.Bold, color = Color.White)
-                Text(info.premioNombre, color = if(info.logroId != null || info.premioId > 0) MaterialTheme.colors.secondary else Color.LightGray, style = MaterialTheme.typography.body1)
-                if(info.logroId != null || info.premioId > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
+                if (info.logroId != null) {
+                    DynamicImage(
+                        name = getImagePath(info.logroId, "Logro") ?: "", 
+                        modifier = Modifier.size(56.dp).padding(end = 16.dp),
+                        colorFilter = if (!info.desbloqueado) grayScaleFilter else null
+                    )
+                } else {
+                    Box(Modifier.size(56.dp).padding(end = 16.dp))
                 }
+                Column(Modifier.weight(1f)) {
+                    Text(info.premioNombre, color = Color.White, style = MaterialTheme.typography.h6, fontWeight = FontWeight.Bold)
+                    if (info.logroDescripcion != null) {
+                        Text(info.logroDescripcion, color = Color.Gray, style = MaterialTheme.typography.body2)
+                    }
+                }
+                if(info.logroId != null || info.premioId > 0) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
+                }
+            }
+            Divider(color = Color.DarkGray.copy(alpha = 0.5f))
+        }
+
+        Spacer(Modifier.height(32.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (prevPersonaje != null) {
+                Row(
+                    modifier = Modifier
+                        .clickable { onNavigate(prevPersonaje) }
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DynamicImage(getImagePath(prevPersonaje.id, "Personaje") ?: "", Modifier.size(40.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Anterior", tint = MaterialTheme.colors.secondary)
+                }
+            } else {
+                Spacer(Modifier.width(1.dp))
+            }
+
+            if (nextPersonaje != null) {
+                Row(
+                    modifier = Modifier
+                        .clickable { onNavigate(nextPersonaje) }
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Siguiente", tint = MaterialTheme.colors.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    DynamicImage(getImagePath(nextPersonaje.id, "Personaje") ?: "", Modifier.size(40.dp))
+                }
+            } else {
+                Spacer(Modifier.width(1.dp))
             }
         }
     }
@@ -713,6 +848,7 @@ fun DrawerContent(onNavigate: (Screen) -> Unit) {
         DrawerItem("Consumibles", Icons.AutoMirrored.Filled.List) { onNavigate(Screen.SubMenuConsumibles) }
         DrawerItem("Transformaciones", Icons.Default.Star) { onNavigate(Screen.Transformaciones) }
         DrawerItem("Logros", Icons.Default.EmojiEvents) { onNavigate(Screen.Logros) }
+        DrawerItem("Maldiciones", Icons.Default.Warning) { onNavigate(Screen.Maldiciones) }
     }
 }
 
@@ -752,6 +888,7 @@ fun MenuScreen(onNavigate: (Screen) -> Unit) {
         MenuButton("Consumibles", Icons.AutoMirrored.Filled.List) { onNavigate(Screen.SubMenuConsumibles) }
         MenuButton("Transformaciones", Icons.Default.Star) { onNavigate(Screen.Transformaciones) }
         MenuButton("Logros", Icons.Default.EmojiEvents) { onNavigate(Screen.Logros) }
+        MenuButton("Maldiciones", Icons.Default.Warning) { onNavigate(Screen.Maldiciones) }
     }
 }
 

@@ -47,11 +47,11 @@ private class IsaacDatabaseImpl(
           """.trimMargin(), 0)
       driver.execute(null, """
           |CREATE TABLE Consumibles (
+          |    uid INTEGER PRIMARY KEY,
           |    id INTEGER NOT NULL,
           |    nombre TEXT NOT NULL,
           |    descripcion TEXT NOT NULL,
-          |    tipo TEXT NOT NULL,
-          |    PRIMARY KEY (id, tipo) -- Clave compuesta para evitar que se pisen Cartas/Pills/Trinkets
+          |    tipo TEXT NOT NULL
           |)
           """.trimMargin(), 0)
       driver.execute(null, """
@@ -78,7 +78,7 @@ private class IsaacDatabaseImpl(
           |    consumible_inicial_id INTEGER,
           |    FOREIGN KEY (personaje_id) REFERENCES Personajes(id) ON DELETE CASCADE,
           |    FOREIGN KEY (objeto_inicial_id) REFERENCES Objetos(id) ON DELETE SET NULL,
-          |    FOREIGN KEY (consumible_inicial_id) REFERENCES Consumibles(id) ON DELETE SET NULL
+          |    FOREIGN KEY (consumible_inicial_id) REFERENCES Consumibles(uid) ON DELETE SET NULL
           |)
           """.trimMargin(), 0)
       driver.execute(null, """
@@ -123,7 +123,8 @@ private class IsaacDatabaseImpl(
           |    desbloquea_objeto_id INTEGER,
           |    desbloquea_consumible_id INTEGER,
           |    FOREIGN KEY (desbloquea_personaje_id) REFERENCES Personajes(id) ON DELETE SET NULL,
-          |    FOREIGN KEY (desbloquea_objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL
+          |    FOREIGN KEY (desbloquea_objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL,
+          |    FOREIGN KEY (desbloquea_consumible_id) REFERENCES Consumibles(uid) ON DELETE SET NULL
           |)
           """.trimMargin(), 0)
       driver.execute(null, """
@@ -135,6 +136,14 @@ private class IsaacDatabaseImpl(
           |    FOREIGN KEY (personaje_id) REFERENCES Personajes(id) ON DELETE CASCADE,
           |    FOREIGN KEY (marca_id) REFERENCES Marcas(id) ON DELETE CASCADE,
           |    FOREIGN KEY (logro_id) REFERENCES Logros(id) ON DELETE SET NULL
+          |)
+          """.trimMargin(), 0)
+      driver.execute(null, """
+          |CREATE TABLE Maldiciones (
+          |    id INTEGER PRIMARY KEY,
+          |    nombre TEXT NOT NULL,
+          |    descripcion TEXT NOT NULL,
+          |    notas TEXT
           |)
           """.trimMargin(), 0)
       return QueryResult.Unit

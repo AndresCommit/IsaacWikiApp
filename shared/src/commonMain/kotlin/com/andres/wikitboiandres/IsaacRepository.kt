@@ -21,6 +21,7 @@ data class RemoteObjeto(
 
 @Serializable
 data class RemoteConsumible(
+    val uid: Int,
     val id: Int,
     val nombre: String,
     val descripcion: String,
@@ -93,6 +94,14 @@ data class RemoteTransformacionObjeto(
     val objeto_id: Int
 )
 
+@Serializable
+data class RemoteMaldicion(
+    val id: Int,
+    val nombre: String,
+    val descripcion: String,
+    val notas: String? = null
+)
+
 data class DesbloqueoInfo(
     val marcaNombre: String,
     val premioNombre: String,
@@ -100,7 +109,9 @@ data class DesbloqueoInfo(
     val esObjeto: Boolean,
     val consumibleTipo: String? = null,
     val pId: Int? = null,
-    val logroId: Int? = null
+    val logroId: Int? = null,
+    val logroDescripcion: String? = null,
+    val desbloqueado: Boolean = false
 )
 
 class IsaacRepository(private val database: IsaacDatabase) {
@@ -142,12 +153,13 @@ class IsaacRepository(private val database: IsaacDatabase) {
 
     suspend fun fetchAndSaveConsumibles() {
         try {
-            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/ab_consumibles.json"
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/consumibles.json"
             val consumibles: List<RemoteConsumible> = client.get(url).body()
 
             database.isaacDatabaseQueries.transaction {
                 consumibles.forEach { cons ->
                     database.isaacDatabaseQueries.insertConsumible(
+                        uid = cons.uid.toLong(),
                         id = cons.id.toLong(),
                         nombre = cons.nombre,
                         descripcion = cons.descripcion,
@@ -318,6 +330,27 @@ class IsaacRepository(private val database: IsaacDatabase) {
         }
     }
 
+    suspend fun fetchAndSaveMaldiciones() {
+        try {
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/maldiciones.json"
+            val curses: List<RemoteMaldicion> = client.get(url).body()
+
+            database.isaacDatabaseQueries.transaction {
+                curses.forEach { c ->
+                    database.isaacDatabaseQueries.insertMaldicion(
+                        id = c.id.toLong(),
+                        nombre = c.nombre,
+                        descripcion = c.descripcion,
+                        notas = c.notas
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+    }
+
     fun updateLogroStatus(id: Int, unlocked: Boolean) {
         database.isaacDatabaseQueries.updateLogroStatus(unlocked, id.toLong())
     }
@@ -349,12 +382,13 @@ class IsaacRepository(private val database: IsaacDatabase) {
     fun getAllConsumibles(): List<RemoteConsumible> {
         return database.isaacDatabaseQueries.selectAllConsumibles().executeAsList().map {
             RemoteConsumible(
+                uid = it.uid.toInt(),
                 id = it.id.toInt(),
                 nombre = it.nombre,
                 descripcion = it.descripcion,
                 tipo = it.tipo
             )
-        }.sortedBy { it.id }
+        }.sortedBy { it.uid }
     }
 
     fun getAllTransformaciones(): List<RemoteTransformacion> {
@@ -377,6 +411,17 @@ class IsaacRepository(private val database: IsaacDatabase) {
                 desbloquea_personaje_id = it.desbloquea_personaje_id?.toInt(),
                 desbloquea_objeto_id = it.desbloquea_objeto_id?.toInt(),
                 desbloquea_consumible_id = it.desbloquea_consumible_id?.toInt()
+            )
+        }.sortedBy { it.id }
+    }
+
+    fun getAllMaldiciones(): List<RemoteMaldicion> {
+        return database.isaacDatabaseQueries.selectAllMaldiciones().executeAsList().map {
+            RemoteMaldicion(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                descripcion = it.descripcion,
+                notas = it.notas
             )
         }.sortedBy { it.id }
     }
@@ -404,7 +449,9 @@ class IsaacRepository(private val database: IsaacDatabase) {
                     esObjeto = it.objetoId != null,
                     consumibleTipo = it.consumibleTipo,
                     pId = it.pId?.toInt(),
-                    logroId = it.logroId?.toInt()
+                    logroId = it.logroId?.toInt(),
+                    logroDescripcion = it.logroDescripcion,
+                    desbloqueado = it.desbloqueado ?: false
                 )
             }
     }
@@ -447,18 +494,38 @@ class IsaacRepository(private val database: IsaacDatabase) {
 
     fun getConsumibleById(id: Int): RemoteConsumible? {
         return database.isaacDatabaseQueries.getConsumibleById(id.toLong()).executeAsOneOrNull()?.let {
-            RemoteConsumible(it.id.toInt(), it.nombre, it.descripcion, it.tipo)
+            RemoteConsumible(it.uid.toInt(), it.id.toInt(), it.nombre, it.descripcion, it.tipo)
+        }
+    }
+
+    fun getConsumibleByUid(uid: Int): RemoteConsumible? {
+        return database.isaacDatabaseQueries.getConsumibleByUid(uid.toLong()).executeAsOneOrNull()?.let {
+            RemoteConsumible(it.uid.toInt(), it.id.toInt(), it.nombre, it.descripcion, it.tipo)
         }
     }
 
     fun getConsumibleByIdAndType(id: Int, tipo: String): RemoteConsumible? {
         return database.isaacDatabaseQueries.getConsumibleByIdAndType(id.toLong(), tipo).executeAsOneOrNull()?.let {
-            RemoteConsumible(it.id.toInt(), it.nombre, it.descripcion, it.tipo)
+            RemoteConsumible(it.uid.toInt(), it.id.toInt(), it.nombre, it.descripcion, it.tipo)
         }
     }
 
     fun getLogroById(id: Int): RemoteLogro? {
         return database.isaacDatabaseQueries.getLogroById(id.toLong()).executeAsOneOrNull()?.let {
+            RemoteLogro(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                descripcion = it.descripcion,
+                desbloqueado = it.desbloqueado ?: false,
+                desbloquea_personaje_id = it.desbloquea_personaje_id?.toInt(),
+                desbloquea_objeto_id = it.desbloquea_objeto_id?.toInt(),
+                desbloquea_consumible_id = it.desbloquea_consumible_id?.toInt()
+            )
+        }
+    }
+
+    fun getLogrosByRewardObjeto(objetoId: Int): List<RemoteLogro> {
+        return database.isaacDatabaseQueries.getLogrosByRewardObjeto(objetoId.toLong()).executeAsList().map {
             RemoteLogro(
                 id = it.id.toInt(),
                 nombre = it.nombre,
@@ -489,5 +556,9 @@ class IsaacRepository(private val database: IsaacDatabase) {
 
     fun getAllLogrosCount(): Long {
         return database.isaacDatabaseQueries.selectAllLogros().executeAsList().size.toLong()
+    }
+
+    fun getAllMaldicionesCount(): Long {
+        return database.isaacDatabaseQueries.selectAllMaldiciones().executeAsList().size.toLong()
     }
 }

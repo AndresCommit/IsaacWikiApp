@@ -24,11 +24,11 @@ CREATE TABLE Objetos (
 
 -- 3. TABLA: CONSUMIBLES
 CREATE TABLE Consumibles (
+    uid INTEGER PRIMARY KEY,
     id INTEGER NOT NULL,
     nombre TEXT NOT NULL,
     descripcion TEXT NOT NULL,
-    tipo TEXT NOT NULL,
-    PRIMARY KEY (id, tipo) -- Clave compuesta para evitar que se pisen Cartas/Pills/Trinkets
+    tipo TEXT NOT NULL
 );
 
 CREATE TABLE Estadisticas_Personaje (
@@ -54,7 +54,7 @@ CREATE TABLE Estadisticas_Personaje (
     consumible_inicial_id INTEGER,
     FOREIGN KEY (personaje_id) REFERENCES Personajes(id) ON DELETE CASCADE,
     FOREIGN KEY (objeto_inicial_id) REFERENCES Objetos(id) ON DELETE SET NULL,
-    FOREIGN KEY (consumible_inicial_id) REFERENCES Consumibles(id) ON DELETE SET NULL
+    FOREIGN KEY (consumible_inicial_id) REFERENCES Consumibles(uid) ON DELETE SET NULL
 );
 -- 5. TABLA: SINERGIAS
 CREATE TABLE Sinergias (
@@ -98,7 +98,8 @@ CREATE TABLE Logros (
     desbloquea_objeto_id INTEGER,
     desbloquea_consumible_id INTEGER,
     FOREIGN KEY (desbloquea_personaje_id) REFERENCES Personajes(id) ON DELETE SET NULL,
-    FOREIGN KEY (desbloquea_objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL
+    FOREIGN KEY (desbloquea_objeto_id) REFERENCES Objetos(id) ON DELETE SET NULL,
+    FOREIGN KEY (desbloquea_consumible_id) REFERENCES Consumibles(uid) ON DELETE SET NULL
 );
 
 -- 10. TABLA: DESBLOQUEOS
@@ -110,6 +111,14 @@ CREATE TABLE Desbloqueos (
     FOREIGN KEY (personaje_id) REFERENCES Personajes(id) ON DELETE CASCADE,
     FOREIGN KEY (marca_id) REFERENCES Marcas(id) ON DELETE CASCADE,
     FOREIGN KEY (logro_id) REFERENCES Logros(id) ON DELETE SET NULL
+);
+
+-- 11. TABLA: MALDICIONES
+CREATE TABLE Maldiciones (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    notas TEXT
 );
 
 -- QUERIES PARA PERSONAJES
@@ -136,14 +145,17 @@ SELECT * FROM Objetos WHERE id = ?;
 
 -- QUERIES PARA CONSUMIBLES
 insertConsumible:
-INSERT OR REPLACE INTO Consumibles(id, nombre, descripcion, tipo)
-VALUES (?, ?, ?, ?);
+INSERT OR REPLACE INTO Consumibles(uid, id, nombre, descripcion, tipo)
+VALUES (?, ?, ?, ?, ?);
 
 selectAllConsumibles:
 SELECT * FROM Consumibles;
 
 getConsumibleById:
 SELECT * FROM Consumibles WHERE id = ? LIMIT 1;
+
+getConsumibleByUid:
+SELECT * FROM Consumibles WHERE uid = ?;
 
 getConsumibleByIdAndType:
 SELECT * FROM Consumibles WHERE id = ? AND tipo = ?;
@@ -170,6 +182,9 @@ SELECT * FROM Logros;
 getLogroById:
 SELECT * FROM Logros WHERE id = ?;
 
+getLogrosByRewardObjeto:
+SELECT * FROM Logros WHERE desbloquea_objeto_id = ?;
+
 -- QUERIES PARA DESBLOQUEOS
 insertDesbloqueo:
 INSERT OR REPLACE INTO Desbloqueos(personaje_id, marca_id, logro_id)
@@ -182,6 +197,8 @@ SELECT
     Marcas.nombre AS marcaNombre,
     Logros.nombre AS logroNombre,
     Logros.id AS logroId,
+    Logros.descripcion AS logroDescripcion,
+    Logros.desbloqueado AS desbloqueado,
     Logros.desbloquea_objeto_id AS objetoId,
     Logros.desbloquea_consumible_id AS consumibleId,
     Logros.desbloquea_personaje_id AS pId,
@@ -190,7 +207,7 @@ FROM Desbloqueos
 JOIN Personajes ON Desbloqueos.personaje_id = Personajes.id
 JOIN Marcas ON Desbloqueos.marca_id = Marcas.id
 LEFT JOIN Logros ON Desbloqueos.logro_id = Logros.id
-LEFT JOIN Consumibles ON Logros.desbloquea_consumible_id = Consumibles.id
+LEFT JOIN Consumibles ON Logros.desbloquea_consumible_id = Consumibles.uid
 WHERE Desbloqueos.personaje_id = ?;
 
 -- QUERIES PARA ESTADISTICAS
@@ -221,3 +238,11 @@ getObjetosByTransformacion:
 SELECT Objetos.* FROM Objetos
 JOIN Transformacion_Objeto ON Objetos.id = Transformacion_Objeto.objeto_id
 WHERE Transformacion_Objeto.transformacion_id = ?;
+
+-- QUERIES PARA MALDICIONES
+insertMaldicion:
+INSERT OR REPLACE INTO Maldiciones(id, nombre, descripcion, notas)
+VALUES (?, ?, ?, ?);
+
+selectAllMaldiciones:
+SELECT * FROM Maldiciones;
