@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
@@ -22,13 +23,16 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.andres.wikitboiandres.db.IsaacDatabase
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -42,7 +46,7 @@ enum class Screen {
 data class SearchItem(val id: Int, val nombre: String, val tipo: String, val original: Any)
 
 @Composable
-fun App(database: IsaacDatabase) {
+fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncManager) {
     val repository = remember { IsaacRepository(database) }
     var currentScreen by remember { mutableStateOf(Screen.Loading) }
     var status by remember { mutableStateOf("Cargando datos...") }
@@ -51,6 +55,8 @@ fun App(database: IsaacDatabase) {
 
     val scope = rememberCoroutineScope()
     val scaffoldState = rememberScaffoldState()
+
+    val currentUser by authManager.currentUser.collectAsState()
 
     var objetos by remember { mutableStateOf(emptyList<RemoteObjeto>()) }
     var personajes by remember { mutableStateOf(emptyList<RemotePersonaje>()) }
@@ -106,6 +112,19 @@ fun App(database: IsaacDatabase) {
     var selectedLogro by remember { mutableStateOf<RemoteLogro?>(null) }
     var selectedMaldicion by remember { mutableStateOf<RemoteMaldicion?>(null) }
 
+    // Función para sincronizar con Firestore
+    val syncAchievements = suspend {
+        currentUser?.let { user ->
+            val remoteIds = syncManager.downloadAchievements(user.uid)
+            if (remoteIds.isNotEmpty()) {
+                remoteIds.forEach { id ->
+                    repository.updateLogroStatus(id, true)
+                }
+                logros = repository.getAllLogros()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
             if (repository.getAllObjetosCount() == 0L) {
@@ -129,9 +148,20 @@ fun App(database: IsaacDatabase) {
             transformaciones = repository.getAllTransformaciones()
             logros = repository.getAllLogros()
             maldiciones = repository.getAllMaldiciones()
+            
+            // Sincronizar si ya está logueado
+            syncAchievements()
+            
             currentScreen = Screen.Menu
         } catch (e: Exception) {
             status = "Error: ${e.message}"
+        }
+    }
+
+    // Sincronizar cuando el usuario cambia (inicia sesión)
+    LaunchedEffect(currentUser) {
+        if (currentUser != null) {
+            syncAchievements()
         }
     }
 
@@ -189,11 +219,16 @@ fun App(database: IsaacDatabase) {
                 )
             },
             drawerContent = {
-                DrawerContent(onNavigate = { screen ->
-                    navigationStack.clear()
-                    currentScreen = screen
-                    scope.launch { scaffoldState.drawerState.close() }
-                })
+                DrawerContent(
+                    user = currentUser,
+                    onSignIn = { scope.launch { authManager.signInWithGoogle() } },
+                    onSignOut = { scope.launch { authManager.signOut() } },
+                    onNavigate = { screen ->
+                        navigationStack.clear()
+                        currentScreen = screen
+                        scope.launch { scaffoldState.drawerState.close() }
+                    }
+                )
             }
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize().background(MaterialTheme.colors.background)) {
@@ -302,6 +337,15 @@ fun App(database: IsaacDatabase) {
                                     onCheckedChange = { newVal ->
                                         repository.updateLogroStatus(logro.id, newVal)
                                         logros = repository.getAllLogros() // Refresh
+                                        // Subir a Firestore si está logueado
+                                        currentUser?.let { user ->
+                                            scope.launch {
+                                                syncManager.uploadAchievements(
+                                                    user.uid, 
+                                                    logros.filter { it.desbloqueado }.map { it.id }
+                                                )
+                                            }
+                                        }
                                     },
                                     colors = CheckboxDefaults.colors(
                                         checkedColor = orangeColor,
@@ -347,6 +391,15 @@ fun App(database: IsaacDatabase) {
                                 repository.updateLogroStatus(logro.id, newVal)
                                 logros = repository.getAllLogros() // Refresh list
                                 selectedLogro = repository.getLogroById(logro.id) // Update current
+                                // Subir a Firestore if logged in
+                                currentUser?.let { user ->
+                                    scope.launch {
+                                        syncManager.uploadAchievements(
+                                            user.uid, 
+                                            logros.filter { it.desbloqueado }.map { it.id }
+                                        )
+                                    }
+                                }
                             }
                         ) { type, id ->
                             when(type) {
@@ -836,19 +889,75 @@ fun StatRow(label: String, value: String) {
 }
 
 @Composable
-fun DrawerContent(onNavigate: (Screen) -> Unit) {
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colors.surface).padding(16.dp)) {
-        Text("Wiki Isaac", style = MaterialTheme.typography.h5, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(24.dp))
-        DrawerItem("Inicio", Icons.Default.Home) { onNavigate(Screen.Menu) }
-        Divider(color = Color.Gray.copy(alpha = 0.5f))
-        DrawerItem("Buscador Global", Icons.Default.Search) { onNavigate(Screen.GlobalSearch) }
-        DrawerItem("Objetos", Icons.Default.Info) { onNavigate(Screen.Objetos) }
-        DrawerItem("Personajes", Icons.Default.Person) { onNavigate(Screen.Personajes) }
-        DrawerItem("Consumibles", Icons.AutoMirrored.Filled.List) { onNavigate(Screen.SubMenuConsumibles) }
-        DrawerItem("Transformaciones", Icons.Default.Star) { onNavigate(Screen.Transformaciones) }
-        DrawerItem("Logros", Icons.Default.EmojiEvents) { onNavigate(Screen.Logros) }
-        DrawerItem("Maldiciones", Icons.Default.Warning) { onNavigate(Screen.Maldiciones) }
+fun DrawerContent(
+    user: AuthUser?,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+    onNavigate: (Screen) -> Unit
+) {
+    val orangeColor = Color(0xFFFF4500)
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colors.surface)) {
+        // User Section
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(orangeColor)
+                .padding(24.dp)
+        ) {
+            if (user != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(40.dp), tint = orangeColor)
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(user.name ?: "Usuario", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(user.email ?: "", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                        Text(
+                            "Cerrar Sesión",
+                            color = Color.White,
+                            modifier = Modifier.clickable { onSignOut() }.padding(top = 4.dp),
+                            style = MaterialTheme.typography.caption,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.clickable { onSignIn() }.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text("Iniciar Sesión", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("Sincroniza tus logros", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Column(Modifier.padding(16.dp)) {
+            Text("Navegación", style = MaterialTheme.typography.caption, color = Color.Gray, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            DrawerItem("Inicio", Icons.Default.Home) { onNavigate(Screen.Menu) }
+            Divider(color = Color.Gray.copy(alpha = 0.2f))
+            DrawerItem("Buscador Global", Icons.Default.Search) { onNavigate(Screen.GlobalSearch) }
+            DrawerItem("Objetos", Icons.Default.Info) { onNavigate(Screen.Objetos) }
+            DrawerItem("Personajes", Icons.Default.Person) { onNavigate(Screen.Personajes) }
+            DrawerItem("Consumibles", Icons.AutoMirrored.Filled.List) { onNavigate(Screen.SubMenuConsumibles) }
+            DrawerItem("Transformaciones", Icons.Default.Star) { onNavigate(Screen.Transformaciones) }
+            DrawerItem("Logros", Icons.Default.EmojiEvents) { onNavigate(Screen.Logros) }
+            DrawerItem("Maldiciones", Icons.Default.Warning) { onNavigate(Screen.Maldiciones) }
+        }
     }
 }
 

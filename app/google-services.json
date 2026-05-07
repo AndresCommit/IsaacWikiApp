@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "381449892791",
+    "project_id": "wikitboi",
+    "storage_bucket": "wikitboi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:381449892791:android:b1b56a0941e8b6b0e4ee32",
+        "android_client_info": {
+          "package_name": "com.andres.wikitboiandres"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "381449892791-56l5c45bhscijhanqnllpkdf7f66ck00.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.andres.wikitboiandres",
+            "certificate_hash": "24f6ce9b9bc6d00f8fa2cac2d34f90325f2375b6"
+          }
+        },
+        {
+          "client_id": "381449892791-1nkoiibk9qgcsbspdecnkiu2gdrb2nk1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB5hxzRnWIGq7JixuoVf6B8-y5HTNZtQzo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "381449892791-1nkoiibk9qgcsbspdecnkiu2gdrb2nk1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
