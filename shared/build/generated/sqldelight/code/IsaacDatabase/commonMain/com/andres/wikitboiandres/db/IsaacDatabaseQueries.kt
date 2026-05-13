@@ -264,31 +264,35 @@ public class IsaacDatabaseQueries(
     nombre: String,
     descripcion: String,
     desbloqueado: Boolean?,
+    steam_api_name: String?,
     desbloquea_personaje_id: Long?,
     desbloquea_objeto_id: Long?,
     desbloquea_consumible_id: Long?,
   ) -> T): Query<T> = Query(234_347_932, arrayOf("Logros"), driver, "IsaacDatabase.sq",
       "selectAllLogros",
-      "SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros") {
+      "SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.steam_api_name, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros") {
       cursor ->
     mapper(
       cursor.getLong(0)!!,
       cursor.getString(1)!!,
       cursor.getString(2)!!,
       cursor.getBoolean(3),
-      cursor.getLong(4),
+      cursor.getString(4),
       cursor.getLong(5),
-      cursor.getLong(6)
+      cursor.getLong(6),
+      cursor.getLong(7)
     )
   }
 
   public fun selectAllLogros(): Query<Logros> = selectAllLogros { id, nombre, descripcion,
-      desbloqueado, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id ->
+      desbloqueado, steam_api_name, desbloquea_personaje_id, desbloquea_objeto_id,
+      desbloquea_consumible_id ->
     Logros(
       id,
       nombre,
       descripcion,
       desbloqueado,
+      steam_api_name,
       desbloquea_personaje_id,
       desbloquea_objeto_id,
       desbloquea_consumible_id
@@ -300,6 +304,7 @@ public class IsaacDatabaseQueries(
     nombre: String,
     descripcion: String,
     desbloqueado: Boolean?,
+    steam_api_name: String?,
     desbloquea_personaje_id: Long?,
     desbloquea_objeto_id: Long?,
     desbloquea_consumible_id: Long?,
@@ -309,19 +314,22 @@ public class IsaacDatabaseQueries(
       cursor.getString(1)!!,
       cursor.getString(2)!!,
       cursor.getBoolean(3),
-      cursor.getLong(4),
+      cursor.getString(4),
       cursor.getLong(5),
-      cursor.getLong(6)
+      cursor.getLong(6),
+      cursor.getLong(7)
     )
   }
 
   public fun getLogroById(id: Long): Query<Logros> = getLogroById(id) { id_, nombre, descripcion,
-      desbloqueado, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id ->
+      desbloqueado, steam_api_name, desbloquea_personaje_id, desbloquea_objeto_id,
+      desbloquea_consumible_id ->
     Logros(
       id_,
       nombre,
       descripcion,
       desbloqueado,
+      steam_api_name,
       desbloquea_personaje_id,
       desbloquea_objeto_id,
       desbloquea_consumible_id
@@ -333,6 +341,7 @@ public class IsaacDatabaseQueries(
     nombre: String,
     descripcion: String,
     desbloqueado: Boolean?,
+    steam_api_name: String?,
     desbloquea_personaje_id: Long?,
     desbloquea_objeto_id: Long?,
     desbloquea_consumible_id: Long?,
@@ -342,20 +351,22 @@ public class IsaacDatabaseQueries(
       cursor.getString(1)!!,
       cursor.getString(2)!!,
       cursor.getBoolean(3),
-      cursor.getLong(4),
+      cursor.getString(4),
       cursor.getLong(5),
-      cursor.getLong(6)
+      cursor.getLong(6),
+      cursor.getLong(7)
     )
   }
 
   public fun getLogrosByRewardObjeto(desbloquea_objeto_id: Long?): Query<Logros> =
       getLogrosByRewardObjeto(desbloquea_objeto_id) { id, nombre, descripcion, desbloqueado,
-      desbloquea_personaje_id, desbloquea_objeto_id_, desbloquea_consumible_id ->
+      steam_api_name, desbloquea_personaje_id, desbloquea_objeto_id_, desbloquea_consumible_id ->
     Logros(
       id,
       nombre,
       descripcion,
       desbloqueado,
+      steam_api_name,
       desbloquea_personaje_id,
       desbloquea_objeto_id_,
       desbloquea_consumible_id
@@ -633,21 +644,23 @@ public class IsaacDatabaseQueries(
     nombre: String,
     descripcion: String,
     desbloqueado: Boolean?,
+    steam_api_name: String?,
     desbloquea_personaje_id: Long?,
     desbloquea_objeto_id: Long?,
     desbloquea_consumible_id: Long?,
   ) {
     driver.execute(1_203_696_109, """
-        |INSERT OR REPLACE INTO Logros(id, nombre, descripcion, desbloqueado, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id)
-        |VALUES (?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 7) {
+        |INSERT OR REPLACE INTO Logros(id, nombre, descripcion, desbloqueado, steam_api_name, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 8) {
           bindLong(0, id)
           bindString(1, nombre)
           bindString(2, descripcion)
           bindBoolean(3, desbloqueado)
-          bindLong(4, desbloquea_personaje_id)
-          bindLong(5, desbloquea_objeto_id)
-          bindLong(6, desbloquea_consumible_id)
+          bindString(4, steam_api_name)
+          bindLong(5, desbloquea_personaje_id)
+          bindLong(6, desbloquea_objeto_id)
+          bindLong(7, desbloquea_consumible_id)
         }
     notifyQueries(1_203_696_109) { emit ->
       emit("Logros")
@@ -660,6 +673,17 @@ public class IsaacDatabaseQueries(
           bindLong(1, id)
         }
     notifyQueries(1_975_707_695) { emit ->
+      emit("Logros")
+    }
+  }
+
+  public fun updateLogroStatusBySteamName(steam_api_name: String?) {
+    driver.execute(null,
+        """UPDATE Logros SET desbloqueado = 1 WHERE steam_api_name ${ if (steam_api_name == null) "IS" else "=" } ?""",
+        1) {
+          bindString(0, steam_api_name)
+        }
+    notifyQueries(-1_394_689_611) { emit ->
       emit("Logros")
     }
   }
@@ -907,7 +931,7 @@ public class IsaacDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
         driver.executeQuery(935_277_880,
-        """SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros WHERE id = ?""",
+        """SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.steam_api_name, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros WHERE id = ?""",
         mapper, 1) {
       bindLong(0, id)
     }
@@ -929,7 +953,7 @@ public class IsaacDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
         driver.executeQuery(null,
-        """SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros WHERE desbloquea_objeto_id ${ if (desbloquea_objeto_id == null) "IS" else "=" } ?""",
+        """SELECT Logros.id, Logros.nombre, Logros.descripcion, Logros.desbloqueado, Logros.steam_api_name, Logros.desbloquea_personaje_id, Logros.desbloquea_objeto_id, Logros.desbloquea_consumible_id FROM Logros WHERE desbloquea_objeto_id ${ if (desbloquea_objeto_id == null) "IS" else "=" } ?""",
         mapper, 1) {
       bindLong(0, desbloquea_objeto_id)
     }

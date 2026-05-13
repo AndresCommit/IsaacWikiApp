@@ -94,6 +94,7 @@ CREATE TABLE Logros (
     nombre TEXT NOT NULL,
     descripcion TEXT NOT NULL,
     desbloqueado INTEGER AS Boolean DEFAULT 0,
+    steam_api_name TEXT,
     desbloquea_personaje_id INTEGER,
     desbloquea_objeto_id INTEGER,
     desbloquea_consumible_id INTEGER,
@@ -170,11 +171,14 @@ SELECT * FROM Marcas;
 
 -- QUERIES PARA LOGROS
 insertLogro:
-INSERT OR REPLACE INTO Logros(id, nombre, descripcion, desbloqueado, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO Logros(id, nombre, descripcion, desbloqueado, steam_api_name, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id)
+VALUES (:id, :nombre, :descripcion, :desbloqueado, :steam_api_name, :desbloquea_personaje_id, :desbloquea_objeto_id, :desbloquea_consumible_id);
 
 updateLogroStatus:
 UPDATE Logros SET desbloqueado = ? WHERE id = ?;
+
+updateLogroStatusBySteamName:
+UPDATE Logros SET desbloqueado = 1 WHERE steam_api_name = :steam_api_name;
 
 selectAllLogros:
 SELECT * FROM Logros;

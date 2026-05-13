@@ -119,6 +119,7 @@ private class IsaacDatabaseImpl(
           |    nombre TEXT NOT NULL,
           |    descripcion TEXT NOT NULL,
           |    desbloqueado INTEGER DEFAULT 0,
+          |    steam_api_name TEXT,
           |    desbloquea_personaje_id INTEGER,
           |    desbloquea_objeto_id INTEGER,
           |    desbloquea_consumible_id INTEGER,

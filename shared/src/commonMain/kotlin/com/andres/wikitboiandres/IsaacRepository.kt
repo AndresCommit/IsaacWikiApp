@@ -1,11 +1,13 @@
 package com.andres.wikitboiandres
 
 import com.andres.wikitboiandres.db.IsaacDatabase
+import com.andres.wikitboiandres.models.SteamAchievementResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
-import io.ktor.http.ContentType
+import io.ktor.client.statement.*
+import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -56,6 +58,7 @@ data class RemoteLogro(
     val nombre: String,
     val descripcion: String,
     val desbloqueado: Boolean = false,
+    val steam_api_name: String? = null,
     val desbloquea_personaje_id: Int? = null,
     val desbloquea_objeto_id: Int? = null,
     val desbloquea_consumible_id: Int? = null
@@ -226,6 +229,7 @@ class IsaacRepository(private val database: IsaacDatabase) {
                         nombre = logro.nombre,
                         descripcion = logro.descripcion,
                         desbloqueado = logro.desbloqueado,
+                        steam_api_name = logro.steam_api_name,
                         desbloquea_personaje_id = logro.desbloquea_personaje_id?.toLong(),
                         desbloquea_objeto_id = logro.desbloquea_objeto_id?.toLong(),
                         desbloquea_consumible_id = logro.desbloquea_consumible_id?.toLong()
@@ -408,6 +412,7 @@ class IsaacRepository(private val database: IsaacDatabase) {
                 nombre = it.nombre,
                 descripcion = it.descripcion,
                 desbloqueado = it.desbloqueado ?: false,
+                steam_api_name = it.steam_api_name,
                 desbloquea_personaje_id = it.desbloquea_personaje_id?.toInt(),
                 desbloquea_objeto_id = it.desbloquea_objeto_id?.toInt(),
                 desbloquea_consumible_id = it.desbloquea_consumible_id?.toInt()
@@ -517,6 +522,7 @@ class IsaacRepository(private val database: IsaacDatabase) {
                 nombre = it.nombre,
                 descripcion = it.descripcion,
                 desbloqueado = it.desbloqueado ?: false,
+                steam_api_name = it.steam_api_name,
                 desbloquea_personaje_id = it.desbloquea_personaje_id?.toInt(),
                 desbloquea_objeto_id = it.desbloquea_objeto_id?.toInt(),
                 desbloquea_consumible_id = it.desbloquea_consumible_id?.toInt()
@@ -531,6 +537,7 @@ class IsaacRepository(private val database: IsaacDatabase) {
                 nombre = it.nombre,
                 descripcion = it.descripcion,
                 desbloqueado = it.desbloqueado ?: false,
+                steam_api_name = it.steam_api_name,
                 desbloquea_personaje_id = it.desbloquea_personaje_id?.toInt(),
                 desbloquea_objeto_id = it.desbloquea_objeto_id?.toInt(),
                 desbloquea_consumible_id = it.desbloquea_consumible_id?.toInt()
@@ -560,5 +567,64 @@ class IsaacRepository(private val database: IsaacDatabase) {
 
     fun getAllMaldicionesCount(): Long {
         return database.isaacDatabaseQueries.selectAllMaldiciones().executeAsList().size.toLong()
+    }
+
+    suspend fun syncAchievementsWithSteam(apiKey: String, steamId: String): Result<Unit> {
+        println("!!!WIKI_ISAAC!!! [REPOSITORIO] Iniciando syncAchievementsWithSteam")
+        
+        return try {
+            val response: HttpResponse = client.get("https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/") {
+                url {
+                    parameters.append("appid", "250900")
+                    parameters.append("key", apiKey)
+                    parameters.append("steamid", steamId)
+                }
+                header("User-Agent", "WikiTBOI-Android-App")
+            }
+            
+            println("!!!WIKI_ISAAC!!! HTTP Status: ${response.status}")
+            
+            if (response.status == HttpStatusCode.OK) {
+                val steamResponse: SteamAchievementResponse = response.body()
+                val playerStats = steamResponse.playerstats
+                
+                if (playerStats != null && playerStats.success) {
+                    val achievements = playerStats.achievements ?: emptyList()
+                    println("!!!WIKI_ISAAC!!! Logros recibidos de Steam: ${achievements.size}")
+                    
+                    if (achievements.isNotEmpty()) {
+                        println("!!!WIKI_ISAAC!!! Muestra de logros (apiname):")
+                        achievements.take(5).forEach { println(" - ${it.apiname} (achieved: ${it.achieved})") }
+                    }
+
+                    database.isaacDatabaseQueries.transaction {
+                        achievements.forEach { steamAch ->
+                            if (steamAch.achieved == 1) {
+                                // 1. Intentar actualizar por steam_api_name
+                                database.isaacDatabaseQueries.updateLogroStatusBySteamName(steamAch.apiname)
+                                
+                                // 2. Intentar actualizar por ID directo (Isaac usa "1", "2", "3"...)
+                                steamAch.apiname.toIntOrNull()?.let { numericId ->
+                                    database.isaacDatabaseQueries.updateLogroStatus(true, numericId.toLong())
+                                }
+                            }
+                        }
+                    }
+                    Result.success(Unit)
+                } else {
+                    val errorMsg = playerStats?.error ?: "Perfil privado o error en Steam."
+                    println("!!!WIKI_ISAAC!!! Error Steam: $errorMsg")
+                    Result.failure(Exception(errorMsg))
+                }
+            } else {
+                val errorBody = response.bodyAsText()
+                println("!!!WIKI_ISAAC!!! Error HTTP: $errorBody")
+                Result.failure(Exception("Error Steam (${response.status})"))
+            }
+        } catch (e: Exception) {
+            println("!!!WIKI_ISAAC!!! EXCEPCIÓN RED: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
     }
 }
