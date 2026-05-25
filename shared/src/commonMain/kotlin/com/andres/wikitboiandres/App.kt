@@ -488,7 +488,6 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
             onSync = { apiKey, steamId ->
                 isSyncing = true
                 scope.launch {
-                    println("!!!WIKI_ISAAC!!! Iniciando proceso desde App.kt")
                     try {
                         val result = repository.syncAchievementsWithSteam(apiKey, steamId)
                         if (result.isSuccess) {
@@ -509,7 +508,6 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
         )
     }
 }
-
 @Composable
 fun SteamSyncDialog(isSyncing: Boolean, onDismiss: () -> Unit, onSync: (String, String) -> Unit) {
     var apiKey by remember { mutableStateOf("") }
@@ -520,7 +518,7 @@ fun SteamSyncDialog(isSyncing: Boolean, onDismiss: () -> Unit, onSync: (String, 
             Column(Modifier.padding(24.dp)) {
                 Text("Sincronizar con Steam", style = MaterialTheme.typography.h6, color = Color.White)
                 Spacer(Modifier.height(8.dp))
-                Text("Asegúrate de que tu perfil sea PÚBLICO.", style = MaterialTheme.typography.caption, color = Color.LightGray)
+                Text("Tu perfil de Steam debe ser Público", style = MaterialTheme.typography.caption, color = Color.LightGray)
                 Spacer(Modifier.height(16.dp))
                 
                 TextField(
