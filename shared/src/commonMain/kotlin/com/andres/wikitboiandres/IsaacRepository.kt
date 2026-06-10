@@ -2,6 +2,7 @@ package com.andres.wikitboiandres
 
 import com.andres.wikitboiandres.db.IsaacDatabase
 import com.andres.wikitboiandres.models.SteamAchievementResponse
+import com.andres.wikitboiandres.network.SteamApiService
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -104,6 +105,26 @@ data class RemoteMaldicion(
     val notas: String? = null
 )
 
+@Serializable
+data class RemoteSinergia(
+    val obj_a_id: Int,
+    val obj_b_id: Int,
+    val descripcion_sinergia: String
+)
+
+@Serializable
+data class RemoteSala(
+    val id: Int,
+    val nombre: String,
+    val descripcion: String,
+    val objetos_ids: List<String> = emptyList()
+)
+
+data class SinergiaInfo(
+    val objetoRelacionadoId: Int,
+    val descripcion: String
+)
+
 data class DesbloqueoInfo(
     val marcaNombre: String,
     val premioNombre: String,
@@ -116,18 +137,20 @@ data class DesbloqueoInfo(
     val desbloqueado: Boolean = false
 )
 
-class IsaacRepository(private val database: IsaacDatabase) {
+class IsaacRepository(
+    private val database: IsaacDatabase,
+    private val steamApiService: SteamApiService
+) {
 
     private val client = HttpClient {
         install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                    coerceInputValues = true
-                },
-                contentType = ContentType.Any 
-            )
+            val jsonConfig = Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+                coerceInputValues = true
+            }
+            json(jsonConfig, ContentType.Application.Json)
+            json(jsonConfig, ContentType.Text.Plain)
         }
     }
 
@@ -139,11 +162,11 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 objetos.forEach { obj ->
                     database.isaacDatabaseQueries.insertObjeto(
-                        id = obj.id.toLong(),
-                        nombre = obj.nombre,
-                        descripcion = obj.descripcion,
-                        tipo = obj.tipo,
-                        calidad = obj.calidad.toLong()
+                        obj.id.toLong(),
+                        obj.nombre,
+                        obj.descripcion,
+                        obj.tipo,
+                        obj.calidad.toLong()
                     )
                 }
             }
@@ -161,11 +184,11 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 consumibles.forEach { cons ->
                     database.isaacDatabaseQueries.insertConsumible(
-                        uid = cons.uid.toLong(),
-                        id = cons.id.toLong(),
-                        nombre = cons.nombre,
-                        descripcion = cons.descripcion,
-                        tipo = cons.tipo
+                        cons.uid.toLong(),
+                        cons.id.toLong(),
+                        cons.nombre,
+                        cons.descripcion,
+                        cons.tipo
                     )
                 }
             }
@@ -183,11 +206,11 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 personajes.forEach { per ->
                     database.isaacDatabaseQueries.insertPersonaje(
-                        id = per.id.toLong(),
-                        nombre = per.nombre,
-                        descripcion = per.descripcion,
-                        es_tainted = if (per.es_tainted) 1L else 0L,
-                        metodo_desbloqueo = per.metodo_desbloqueo
+                        per.id.toLong(),
+                        per.nombre,
+                        per.descripcion,
+                        if (per.es_tainted) 1L else 0L,
+                        per.metodo_desbloqueo
                     )
                 }
             }
@@ -205,8 +228,8 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 marcas.forEach { mar ->
                     database.isaacDatabaseQueries.insertMarca(
-                        id = mar.id.toLong(),
-                        nombre = mar.nombre
+                        mar.id.toLong(),
+                        mar.nombre
                     )
                 }
             }
@@ -224,13 +247,13 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 logros.forEach { logro ->
                     database.isaacDatabaseQueries.insertLogro(
-                        id = logro.id.toLong(),
-                        nombre = logro.nombre,
-                        descripcion = logro.descripcion,
-                        desbloqueado = logro.desbloqueado,
-                        desbloquea_personaje_id = logro.desbloquea_personaje_id?.toLong(),
-                        desbloquea_objeto_id = logro.desbloquea_objeto_id?.toLong(),
-                        desbloquea_consumible_id = logro.desbloquea_consumible_id?.toLong()
+                        logro.id.toLong(),
+                        logro.nombre,
+                        logro.descripcion,
+                        logro.desbloqueado,
+                        logro.desbloquea_personaje_id?.toLong(),
+                        logro.desbloquea_objeto_id?.toLong(),
+                        logro.desbloquea_consumible_id?.toLong()
                     )
                 }
             }
@@ -248,9 +271,9 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 desbloqueos.forEach { des ->
                     database.isaacDatabaseQueries.insertDesbloqueo(
-                        personaje_id = des.personaje_id.toLong(),
-                        marca_id = des.marca_id.toLong(),
-                        logro_id = des.logro_id?.toLong()
+                        des.personaje_id.toLong(),
+                        des.marca_id.toLong(),
+                        des.logro_id?.toLong()
                     )
                 }
             }
@@ -268,22 +291,22 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 stats.forEach { s ->
                     database.isaacDatabaseQueries.insertEstadisticas(
-                        personaje_id = s.personaje_id.toLong(),
-                        corazones_rojos = s.corazones_rojos.toLong(),
-                        corazones_alma = s.corazones_alma.toLong(),
-                        corazones_negros = s.corazones_negros.toLong(),
-                        corazones_hueso = s.corazones_hueso.toLong(),
-                        corazones_moneda = s.corazones_moneda.toLong(),
-                        manto_sagrado = s.manto_sagrado,
-                        salud_aleatoria = s.salud_aleatoria,
-                        velocidad = s.velocidad,
-                        lagrimas = s.lagrimas,
-                        dano = s.dano,
-                        rango = s.rango,
-                        velocidad_disparo = s.velocidad_disparo,
-                        suerte = s.suerte,
-                        objeto_inicial_id = s.objeto_inicial_id?.toLong(),
-                        consumible_inicial_id = s.consumible_inicial_id?.toLong()
+                        s.personaje_id.toLong(),
+                        s.corazones_rojos.toLong(),
+                        s.corazones_alma.toLong(),
+                        s.corazones_negros.toLong(),
+                        s.corazones_hueso.toLong(),
+                        s.corazones_moneda.toLong(),
+                        s.manto_sagrado,
+                        s.salud_aleatoria,
+                        s.velocidad,
+                        s.lagrimas,
+                        s.dano,
+                        s.rango,
+                        s.velocidad_disparo,
+                        s.suerte,
+                        s.objeto_inicial_id?.toLong(),
+                        s.consumible_inicial_id?.toLong()
                     )
                 }
             }
@@ -301,9 +324,9 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 trans.forEach { t ->
                     database.isaacDatabaseQueries.insertTransformacion(
-                        id = t.id.toLong(),
-                        nombre = t.nombre,
-                        descripcion = t.descripcion
+                        t.id.toLong(),
+                        t.nombre,
+                        t.descripcion
                     )
                 }
             }
@@ -321,8 +344,8 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 links.forEach { l ->
                     database.isaacDatabaseQueries.insertTransformacionObjeto(
-                        transformacion_id = l.transformacion_id.toLong(),
-                        objeto_id = l.objeto_id.toLong()
+                        l.transformacion_id.toLong(),
+                        l.objeto_id.toLong()
                     )
                 }
             }
@@ -340,11 +363,59 @@ class IsaacRepository(private val database: IsaacDatabase) {
             database.isaacDatabaseQueries.transaction {
                 curses.forEach { c ->
                     database.isaacDatabaseQueries.insertMaldicion(
-                        id = c.id.toLong(),
-                        nombre = c.nombre,
-                        descripcion = c.descripcion,
-                        notas = c.notas
+                        c.id.toLong(),
+                        c.nombre,
+                        c.descripcion,
+                        c.notas
                     )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    suspend fun fetchAndSaveSinergias() {
+        try {
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/sinergias.json"
+            val sinergias: List<RemoteSinergia> = client.get(url).body()
+
+            database.isaacDatabaseQueries.transaction {
+                sinergias.forEach { sin ->
+                    database.isaacDatabaseQueries.insertSinergia(
+                        sin.obj_a_id.toLong(),
+                        sin.obj_b_id.toLong(),
+                        sin.descripcion_sinergia
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    suspend fun fetchAndSaveSalas() {
+        try {
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/salas-items"
+            val response: String = client.get(url).bodyAsText()
+            val cleanJson = if (response.trim().startsWith("[")) response else "[$response]"
+            val json = Json { ignoreUnknownKeys = true }
+            val salas: List<RemoteSala> = json.decodeFromString(cleanJson)
+
+            database.isaacDatabaseQueries.transaction {
+                salas.forEach { sala ->
+                    database.isaacDatabaseQueries.insertSala(
+                        sala.id.toLong(),
+                        sala.nombre,
+                        sala.descripcion
+                    )
+                    sala.objetos_ids.forEach { objIdStr ->
+                        objIdStr.toLongOrNull()?.let { objId ->
+                            database.isaacDatabaseQueries.insertSalaObjeto(sala.id.toLong(), objId)
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -426,6 +497,16 @@ class IsaacRepository(private val database: IsaacDatabase) {
                 notas = it.notas
             )
         }.sortedBy { it.id }
+    }
+
+    fun getAllSalas(): List<RemoteSala> {
+        return database.isaacDatabaseQueries.selectAllSalas().executeAsList().map {
+            RemoteSala(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                descripcion = it.descripcion
+            )
+        }.sortedBy { it.nombre }
     }
 
     fun getObjetosByTransformacion(transformacionId: Int): List<RemoteObjeto> {
@@ -540,6 +621,37 @@ class IsaacRepository(private val database: IsaacDatabase) {
         }
     }
 
+    fun getSinergiasByObjeto(objetoId: Int): List<SinergiaInfo> {
+        return database.isaacDatabaseQueries.getSinergiasByObjeto(objetoId.toLong()).executeAsList().map {
+            SinergiaInfo(
+                objetoRelacionadoId = it.objetoRelacionadoId.toInt(),
+                descripcion = it.descripcion
+            )
+        }
+    }
+
+    fun getSalasByObjeto(objetoId: Int): List<RemoteSala> {
+        return database.isaacDatabaseQueries.getSalasByObjeto(objetoId.toLong()).executeAsList().map {
+            RemoteSala(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                descripcion = it.descripcion
+            )
+        }
+    }
+
+    fun getObjetosBySala(salaId: Int): List<RemoteObjeto> {
+        return database.isaacDatabaseQueries.getObjetosBySala(salaId.toLong()).executeAsList().map {
+            RemoteObjeto(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                descripcion = it.descripcion,
+                tipo = it.tipo ?: "",
+                calidad = it.calidad?.toInt() ?: 0
+            )
+        }
+    }
+
     fun getAllObjetosCount(): Long {
         return database.isaacDatabaseQueries.selectAllObjetos().executeAsList().size.toLong()
     }
@@ -564,40 +676,31 @@ class IsaacRepository(private val database: IsaacDatabase) {
         return database.isaacDatabaseQueries.selectAllMaldiciones().executeAsList().size.toLong()
     }
 
+    fun getAllSalasCount(): Long {
+        return database.isaacDatabaseQueries.selectAllSalas().executeAsList().size.toLong()
+    }
+
     suspend fun syncAchievementsWithSteam(apiKey: String, steamId: String): Result<Unit> {
         return try {
-            val response: HttpResponse = client.get("https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/") {
-                url {
-                    parameters.append("appid", "250900")
-                    parameters.append("key", apiKey)
-                    parameters.append("steamid", steamId)
-                }
-                header("User-Agent", "WikiTBOI-Android-App")
-            }
+            val steamResponse = steamApiService.getPlayerAchievements(apiKey, steamId)
+            val playerStats = steamResponse.playerstats
             
-            if (response.status == HttpStatusCode.OK) {
-                val steamResponse: SteamAchievementResponse = response.body()
-                val playerStats = steamResponse.playerstats
+            if (playerStats != null && playerStats.success) {
+                val achievements = playerStats.achievements ?: emptyList()
                 
-                if (playerStats != null && playerStats.success) {
-                    val achievements = playerStats.achievements ?: emptyList()
-                    
-                    database.isaacDatabaseQueries.transaction {
-                        achievements.forEach { steamAch ->
-                            if (steamAch.achieved == 1) {
-                                steamAch.apiname.toIntOrNull()?.let { numericId ->
-                                    database.isaacDatabaseQueries.updateLogroStatus(true, numericId.toLong())
-                                }
+                database.isaacDatabaseQueries.transaction {
+                    achievements.forEach { steamAch ->
+                        if (steamAch.achieved == 1) {
+                            steamAch.apiname.toIntOrNull()?.let { numericId ->
+                                database.isaacDatabaseQueries.updateLogroStatus(true, numericId.toLong())
                             }
                         }
                     }
-                    Result.success(Unit)
-                } else {
-                    val errorMsg = playerStats?.error ?: "Perfil privado o error en Steam."
-                    Result.failure(Exception(errorMsg))
                 }
+                Result.success(Unit)
             } else {
-                Result.failure(Exception("Error Steam (${response.status})"))
+                val errorMsg = playerStats?.error ?: "Perfil privado o error en Steam."
+                Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
             e.printStackTrace()

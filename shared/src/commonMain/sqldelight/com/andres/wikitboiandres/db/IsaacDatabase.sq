@@ -104,6 +104,20 @@ CREATE TABLE Maldiciones (
     notas TEXT
 );
 
+CREATE TABLE Salas (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    descripcion TEXT NOT NULL
+);
+
+CREATE TABLE Sala_Objeto (
+    sala_id INTEGER NOT NULL,
+    objeto_id INTEGER NOT NULL,
+    PRIMARY KEY (sala_id, objeto_id),
+    FOREIGN KEY (sala_id) REFERENCES Salas(id) ON DELETE CASCADE,
+    FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE CASCADE
+);
+
 insertPersonaje:
 INSERT OR REPLACE INTO Personajes(id, nombre, descripcion, es_tainted, metodo_desbloqueo)
 VALUES (?, ?, ?, ?, ?);
@@ -149,7 +163,7 @@ SELECT * FROM Marcas;
 
 insertLogro:
 INSERT OR REPLACE INTO Logros(id, nombre, descripcion, desbloqueado, desbloquea_personaje_id, desbloquea_objeto_id, desbloquea_consumible_id)
-VALUES (:id, :nombre, :descripcion, :desbloqueado, :desbloquea_personaje_id, :desbloquea_objeto_id, :desbloquea_consumible_id);
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 updateLogroStatus:
 UPDATE Logros SET desbloqueado = ? WHERE id = ?;
@@ -220,3 +234,44 @@ VALUES (?, ?, ?, ?);
 
 selectAllMaldiciones:
 SELECT * FROM Maldiciones;
+
+insertSinergia:
+INSERT OR REPLACE INTO Sinergias(obj_a_id, obj_b_id, descripcion_sinergia)
+VALUES (?, ?, ?);
+
+getSinergiasByObjeto:
+SELECT
+    obj_b_id AS objetoRelacionadoId,
+    descripcion_sinergia AS descripcion
+FROM Sinergias
+WHERE obj_a_id = :id
+UNION
+SELECT
+    obj_a_id AS objetoRelacionadoId,
+    descripcion_sinergia AS descripcion
+FROM Sinergias
+WHERE obj_b_id = :id;
+
+insertSala:
+INSERT OR REPLACE INTO Salas(id, nombre, descripcion)
+VALUES (?, ?, ?);
+
+insertSalaObjeto:
+INSERT OR REPLACE INTO Sala_Objeto(sala_id, objeto_id)
+VALUES (?, ?);
+
+selectAllSalas:
+SELECT * FROM Salas;
+
+getSalaById:
+SELECT * FROM Salas WHERE id = ?;
+
+getObjetosBySala:
+SELECT Objetos.* FROM Objetos
+JOIN Sala_Objeto ON Objetos.id = Sala_Objeto.objeto_id
+WHERE Sala_Objeto.sala_id = ?;
+
+getSalasByObjeto:
+SELECT Salas.* FROM Salas
+JOIN Sala_Objeto ON Salas.id = Sala_Objeto.sala_id
+WHERE Sala_Objeto.objeto_id = ?;

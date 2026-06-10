@@ -14,7 +14,8 @@ class MainActivity : ComponentActivity() {
         val database = IsaacDatabase(driver)
         
         val authManager = AndroidAuthManager(this)
-        val syncManager = AndroidSyncManager()
+        // Cambiamos a FirestoreSyncManager para usar la lógica compartida del módulo shared
+        val syncManager = FirestoreSyncManager()
         
         setContent {
             App(database, authManager, syncManager)

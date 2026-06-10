@@ -1,6 +1,8 @@
 package com.andres.wikitboiandres
 
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
 
 class AndroidSyncManager : SyncManager {
@@ -8,23 +10,37 @@ class AndroidSyncManager : SyncManager {
     private val collection = db.collection("users")
 
     override suspend fun uploadAchievements(userId: String, achievementIds: List<Int>) {
+        if (userId.isBlank()) return
         try {
+            Log.d("SyncManager", "Subiendo ${achievementIds.size} logros a Firestore...")
+            val data = mapOf("completedAchievements" to achievementIds)
             collection.document(userId)
-                .set(mapOf("completedAchievements" to achievementIds))
+                .set(data, SetOptions.merge())
                 .await()
+            Log.d("SyncManager", "Logros subidos con éxito")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("SyncManager", "Error al subir logros: ${e.message}")
+            throw e
         }
     }
 
     override suspend fun downloadAchievements(userId: String): List<Int> {
-        return try {
+        if (userId.isBlank()) return emptyList()
+        try {
+            Log.d("SyncManager", "Descargando logros de Firestore...")
             val document = collection.document(userId).get().await()
-            val list = document.get("completedAchievements") as? List<*>
-            list?.mapNotNull { (it as? Long)?.toInt() } ?: emptyList()
+            return if (document.exists()) {
+                val rawList = document.get("completedAchievements") as? List<*>
+                val achievements = rawList?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList()
+                Log.d("SyncManager", "Descargados ${achievements.size} logros")
+                achievements
+            } else {
+                Log.d("SyncManager", "No hay datos previos en la nube")
+                emptyList()
+            }
         } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
+            Log.e("SyncManager", "Error al descargar logros: ${e.message}")
+            throw e
         }
     }
 }

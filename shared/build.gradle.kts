@@ -5,14 +5,13 @@ plugins {
     alias(libs.plugins.sqldelight)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.composeCompiler)
-    alias(libs.plugins.googleGmsGoogleServices)
 }
 
 kotlin {
     androidTarget {
         compilations.all {
             kotlinOptions {
-                jvmTarget = "11"
+                jvmTarget = "17"
             }
         }
     }
@@ -43,12 +42,16 @@ kotlin {
             implementation(compose.materialIconsExtended)
             implementation(compose.ui)
             implementation(compose.components.resources)
+            
+            // Firebase KMP (GitLive)
+            implementation(libs.firebase.kotlin.common)
+            implementation(libs.firebase.kotlin.firestore)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.sqldelight.android.driver)
             
-            // Firebase and Auth dependencies moved here
+            // Firebase and Auth dependencies
             implementation(libs.firebase.auth)
             implementation(libs.firebase.firestore)
             implementation(libs.androidx.credentials)
@@ -69,8 +72,8 @@ android {
         minSdk = 24
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 }
 

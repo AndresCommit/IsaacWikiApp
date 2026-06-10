@@ -1,5 +1,6 @@
 package com.andres.wikitboiandres
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -30,7 +34,12 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -47,14 +56,29 @@ import org.jetbrains.compose.resources.decodeToImageBitmap
 import wikitboiandres.shared.generated.resources.Res
 
 enum class Screen {
-    Loading, Menu, Objetos, Personajes, SubMenuConsumibles, ConsumiblesPorTipo, DetalleObjeto, DetallePersonaje, DetalleConsumible, GlobalSearch, Transformaciones, DetalleTransformacion, Logros, DetalleLogro, Maldiciones, DetalleMaldicion
+    Loading, Menu, Objetos, Personajes, SubMenuConsumibles, ConsumiblesPorTipo, DetalleObjeto, DetallePersonaje, DetalleConsumible, GlobalSearch, Transformaciones, DetalleTransformacion, Logros, DetalleLogro, Maldiciones, DetalleMaldicion, Salas, DetalleSala
 }
 
 data class SearchItem(val id: Int, val nombre: String, val tipo: String, val original: Any)
 
 @Composable
 fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncManager) {
-    val repository = remember { IsaacRepository(database) }
+    val client = remember {
+        HttpClient {
+            install(ContentNegotiation) {
+                val jsonConfig = Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                    coerceInputValues = true
+                }
+                json(jsonConfig, ContentType.Application.Json)
+                json(jsonConfig, ContentType.Text.Plain)
+            }
+        }
+    }
+    val steamApiService = remember { SteamApiService(client) }
+    val repository = remember { IsaacRepository(database, steamApiService) }
+    
     val scope = rememberCoroutineScope()
     val scaffoldState = rememberScaffoldState()
     
@@ -71,6 +95,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     var transformaciones by remember { mutableStateOf(emptyList<RemoteTransformacion>()) }
     var logros by remember { mutableStateOf(emptyList<RemoteLogro>()) }
     var maldiciones by remember { mutableStateOf(emptyList<RemoteMaldicion>()) }
+    var salas by remember { mutableStateOf(emptyList<RemoteSala>()) }
     
     var searchQueryObjetos by remember { mutableStateOf("") }
     var searchQueryConsumibles by remember { mutableStateOf("") }
@@ -79,6 +104,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     var searchQueryGlobal by remember { mutableStateOf("") }
 
     var isObjectsGridView by remember { mutableStateOf(false) }
+    var isConsumiblesGridView by remember { mutableStateOf(false) }
+    var isLogrosGridView by remember { mutableStateOf(false) }
     var selectedTipoConsumible by remember { mutableStateOf("") }
     
     val filteredObjetos = remember(objetos, searchQueryObjetos) {
@@ -117,12 +144,29 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     var selectedTransformacion by remember { mutableStateOf<RemoteTransformacion?>(null) }
     var selectedLogro by remember { mutableStateOf<RemoteLogro?>(null) }
     var selectedMaldicion by remember { mutableStateOf<RemoteMaldicion?>(null) }
+    var selectedSala by remember { mutableStateOf<RemoteSala?>(null) }
 
     val syncAchievements = suspend {
-        currentUser?.let { user ->
-            val remoteIds = syncManager.downloadAchievements(user.uid)
-            if (remoteIds.isNotEmpty()) {
-                remoteIds.forEach { id ->
+        val user = currentUser
+        if (user != null) {
+            // 1. Obtener lista actual de logros locales (por si el usuario marcó algunos sin sesión)
+            val currentLocalLogros = repository.getAllLogros()
+            val localUnlockedIds = currentLocalLogros.filter { it.desbloqueado }.map { it.id }.toSet()
+            
+            // 2. Descargar lista de logros de Firestore
+            val remoteIds = syncManager.downloadAchievements(user.uid).toSet()
+            
+            // 3. Combinar ambas listas (Unión)
+            val mergedIds = (localUnlockedIds + remoteIds).toList()
+            
+            // 4. Si hay diferencias, subir la lista combinada a Firestore
+            if (mergedIds.size > remoteIds.size) {
+                syncManager.uploadAchievements(user.uid, mergedIds)
+            }
+            
+            // 5. Si hay logros remotos que no están marcados localmente, actualizar DB local
+            if (mergedIds.size > localUnlockedIds.size) {
+                mergedIds.forEach { id ->
                     repository.updateLogroStatus(id, true)
                 }
                 logros = repository.getAllLogros()
@@ -144,6 +188,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                 repository.fetchAndSaveTransformaciones()
                 repository.fetchAndSaveTransformacionObjeto()
                 repository.fetchAndSaveMaldiciones()
+                repository.fetchAndSaveSinergias()
+                repository.fetchAndSaveSalas()
             }
             objetos = repository.getAllObjetos()
             personajes = repository.getAllPersonajes()
@@ -151,7 +197,13 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
             transformaciones = repository.getAllTransformaciones()
             logros = repository.getAllLogros()
             maldiciones = repository.getAllMaldiciones()
-            syncAchievements()
+            salas = repository.getAllSalas()
+            
+            // Sincronizar si ya hay un usuario al iniciar
+            if (currentUser != null) {
+                syncAchievements()
+            }
+
             currentScreen = Screen.Menu
         } catch (e: Exception) {
             status = "Error: ${e.message}"
@@ -194,7 +246,13 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
             scaffoldState = scaffoldState,
             topBar = {
                 TopAppBar(
-                    title = { Text("Wiki TBOI", fontWeight = FontWeight.Bold) },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            DynamicImage("dice-logo", Modifier.size(32.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Wiki TBOI", fontWeight = FontWeight.Bold)
+                        }
+                    },
                     backgroundColor = MaterialTheme.colors.surface,
                     contentColor = MaterialTheme.colors.primary,
                     navigationIcon = {
@@ -292,12 +350,49 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         }
                     )
                     Screen.ConsumiblesPorTipo -> Column {
-                        if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta") {
-                            SearchBar(searchQueryConsumibles) { searchQueryConsumibles = it }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(end = 8.dp)) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta") {
+                                    SearchBar(searchQueryConsumibles) { searchQueryConsumibles = it }
+                                }
+                            }
+                            if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta") {
+                                IconButton(onClick = { isConsumiblesGridView = !isConsumiblesGridView }) {
+                                    Icon(
+                                        imageVector = if (isConsumiblesGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
+                                        contentDescription = "Cambiar vista",
+                                        tint = orangeColor
+                                    )
+                                }
+                            }
                         }
-                        ListScreen(filteredConsumibles, { it.nombre }, { it.tipo }, { getImagePath(it.id, it.tipo) }, 48) {
-                            selectedConsumible = it
-                            navigateTo(Screen.DetalleConsumible)
+                        if (isConsumiblesGridView && (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta")) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(80.dp),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(8.dp)
+                            ) {
+                                items(filteredConsumibles) { cons ->
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(4.dp)
+                                            .aspectRatio(1f)
+                                            .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
+                                            .clickable { 
+                                                selectedConsumible = cons
+                                                navigateTo(Screen.DetalleConsumible)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        DynamicImage(getImagePath(cons.id, cons.tipo) ?: "", Modifier.size(48.dp))
+                                    }
+                                }
+                            }
+                        } else {
+                            ListScreen(filteredConsumibles, { it.nombre }, { it.tipo }, { getImagePath(it.id, it.tipo) }, 48) {
+                                selectedConsumible = it
+                                navigateTo(Screen.DetalleConsumible)
+                            }
                         }
                     }
                     Screen.Transformaciones -> ListScreen(transformaciones, { it.nombre }, { it.descripcion.take(50) + "..." }, { getImagePath(it.id, "Transformacion") }, 48) {
@@ -310,12 +405,22 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         val progress = if (totalLogros > 0) unlockedLogros.toFloat() / totalLogros else 0f
 
                         Column(Modifier.padding(16.dp)) {
-                            Text(
-                                "Progreso: $unlockedLogros / $totalLogros (${(progress * 100).toInt()}%)",
-                                color = Color.White,
-                                style = MaterialTheme.typography.subtitle1,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Progreso: $unlockedLogros / $totalLogros (${(progress * 100).toInt()}%)",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.subtitle1,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { isLogrosGridView = !isLogrosGridView }) {
+                                    Icon(
+                                        imageVector = if (isLogrosGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
+                                        contentDescription = "Cambiar vista",
+                                        tint = orangeColor
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                             LinearProgressIndicator(
                                 progress = progress,
@@ -326,38 +431,88 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         }
 
                         SearchBar(searchQueryLogros) { searchQueryLogros = it }
-                        ListScreen(
-                            itemList = filteredLogros, 
-                            getTitle = { it.nombre }, 
-                            getSubtitle = { it.descripcion.take(50) + "..." }, 
-                            getImageName = { getImagePath(it.id, "Logro") }, 
-                            iconSize = 56,
-                            getImageFilter = { if (!it.desbloqueado) grayScaleFilter else null },
-                            trailingContent = { logro ->
-                                Checkbox(
-                                    checked = logro.desbloqueado,
-                                    onCheckedChange = { newVal ->
-                                        repository.updateLogroStatus(logro.id, newVal)
-                                        logros = repository.getAllLogros()
-                                        currentUser?.let { user ->
-                                            scope.launch {
-                                                syncManager.uploadAchievements(
-                                                    user.uid, 
-                                                    logros.filter { it.desbloqueado }.map { it.id }
-                                                )
-                                            }
-                                        }
-                                    },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = orangeColor,
-                                        uncheckedColor = Color.Gray,
-                                        checkmarkColor = Color.White
-                                    )
-                                )
+                        
+                        if (isLogrosGridView) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(80.dp),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(8.dp)
+                            ) {
+                                items(filteredLogros) { logro ->
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(4.dp)
+                                            .aspectRatio(1f)
+                                            .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
+                                            .clickable { 
+                                                selectedLogro = logro
+                                                navigateTo(Screen.DetalleLogro)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        DynamicImage(
+                                            getImagePath(logro.id, "Logro") ?: "", 
+                                            Modifier.size(56.dp),
+                                            colorFilter = if (!logro.desbloqueado) grayScaleFilter else null
+                                        )
+                                        Checkbox(
+                                            checked = logro.desbloqueado,
+                                            onCheckedChange = { newVal ->
+                                                repository.updateLogroStatus(logro.id, newVal)
+                                                logros = repository.getAllLogros()
+                                                currentUser?.let { user ->
+                                                    scope.launch {
+                                                        syncManager.uploadAchievements(
+                                                            user.uid, 
+                                                            logros.filter { it.desbloqueado }.map { it.id }
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.align(Alignment.TopEnd).size(24.dp),
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = orangeColor,
+                                                uncheckedColor = Color.Gray.copy(alpha = 0.5f),
+                                                checkmarkColor = Color.White
+                                            )
+                                        )
+                                    }
+                                }
                             }
-                        ) {
-                            selectedLogro = it
-                            navigateTo(Screen.DetalleLogro)
+                        } else {
+                            ListScreen(
+                                itemList = filteredLogros, 
+                                getTitle = { it.nombre }, 
+                                getSubtitle = { it.descripcion.take(50) + "..." }, 
+                                getImageName = { getImagePath(it.id, "Logro") }, 
+                                iconSize = 56,
+                                getImageFilter = { if (!it.desbloqueado) grayScaleFilter else null },
+                                trailingContent = { logro ->
+                                    Checkbox(
+                                        checked = logro.desbloqueado,
+                                        onCheckedChange = { newVal ->
+                                            repository.updateLogroStatus(logro.id, newVal)
+                                            logros = repository.getAllLogros()
+                                            currentUser?.let { user ->
+                                                scope.launch {
+                                                    syncManager.uploadAchievements(
+                                                        user.uid, 
+                                                        logros.filter { it.desbloqueado }.map { it.id }
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = orangeColor,
+                                            uncheckedColor = Color.Gray,
+                                            checkmarkColor = Color.White
+                                        )
+                                    )
+                                }
+                            ) {
+                                selectedLogro = it
+                                navigateTo(Screen.DetalleLogro)
+                            }
                         }
                     }
                     Screen.Maldiciones -> Column {
@@ -367,12 +522,40 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                             navigateTo(Screen.DetalleMaldicion)
                         }
                     }
+                    Screen.Salas -> {
+                        ListScreen(salas, { it.nombre }, { it.descripcion.take(60) + "..." }, { getImagePath(it.id, "Sala") }, 48) {
+                            selectedSala = it
+                            navigateTo(Screen.DetalleSala)
+                        }
+                    }
                     Screen.DetalleObjeto -> selectedObjeto?.let { obj ->
                         val relatedLogros = remember(obj.id) { repository.getLogrosByRewardObjeto(obj.id) }
-                        DetailObjetoScreen(obj, relatedLogros) { logro ->
-                            selectedLogro = logro
-                            navigateTo(Screen.DetalleLogro)
-                        }
+                        val sinergias = remember(obj.id) { repository.getSinergiasByObjeto(obj.id) }
+                        val itemSalas = remember(obj.id) { repository.getSalasByObjeto(obj.id) }
+                        val currentIndex = objetos.indexOfFirst { it.id == obj.id }
+                        val prevObjeto = if (currentIndex > 0) objetos[currentIndex - 1] else null
+                        val nextObjeto = if (currentIndex != -1 && currentIndex < objetos.size - 1) objetos[currentIndex + 1] else null
+
+                        DetailObjetoScreen(
+                            objeto = obj,
+                            relatedLogros = relatedLogros,
+                            sinergias = sinergias,
+                            salas = itemSalas,
+                            repository = repository,
+                            onLogroClick = { logro ->
+                                selectedLogro = logro
+                                navigateTo(Screen.DetalleLogro)
+                            },
+                            onObjetoClick = { newObj ->
+                                selectedObjeto = newObj
+                            },
+                            onSalaClick = { sala ->
+                                selectedSala = sala
+                                navigateTo(Screen.DetalleSala)
+                            },
+                            prevObjeto = prevObjeto,
+                            nextObjeto = nextObjeto
+                        )
                     }
                     Screen.DetalleTransformacion -> selectedTransformacion?.let { trans ->
                         val objs = remember(trans.id) { repository.getObjetosByTransformacion(trans.id) }
@@ -416,23 +599,45 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                     Screen.DetalleMaldicion -> selectedMaldicion?.let { 
                         DetailScreen(it.nombre, "Descripción", it.descripcion, "Notas", it.notas ?: "Sin notas adicionales", getImagePath(it.id, "Maldicion"))
                     }
+                    Screen.DetalleSala -> selectedSala?.let { sala ->
+                        val objs = remember(sala.id) { repository.getObjetosBySala(sala.id) }
+                        DetailSalaScreen(sala, objs) {
+                            selectedObjeto = it
+                            navigateTo(Screen.DetalleObjeto)
+                        }
+                    }
                     Screen.DetallePersonaje -> selectedPersonaje?.let { per ->
                         val desbloqueos = remember(per.id) { repository.getDesbloqueosByPersonaje(per.id) }
                         val stats = remember(per.id) { repository.getEstadisticasByPersonaje(per.id) }
+                        val unlockLogros = remember(per.id, logros) { logros.filter { it.desbloquea_personaje_id == per.id } }
                         val currentIndex = personajes.indexOfFirst { it.id == per.id }
                         val prevPersonaje = if (currentIndex > 0) personajes[currentIndex - 1] else null
                         val nextPersonaje = if (currentIndex != -1 && currentIndex < personajes.size - 1) personajes[currentIndex + 1] else null
 
                         DetailPersonajeScreen(
-                            nombre = per.nombre,
-                            descripcion = per.descripcion,
-                            esTainted = per.es_tainted,
-                            metodo = per.metodo_desbloqueo ?: "Desbloqueado por defecto",
+                            per = per,
                             stats = stats,
                             desbloqueos = desbloqueos,
+                            unlockLogros = unlockLogros,
                             imageName = getImagePath(per.id, "Personaje"),
                             prevPersonaje = prevPersonaje,
                             nextPersonaje = nextPersonaje,
+                            onLogroStatusChange = { logroId, newVal ->
+                                repository.updateLogroStatus(logroId, newVal)
+                                logros = repository.getAllLogros()
+                                currentUser?.let { user ->
+                                    scope.launch {
+                                        syncManager.uploadAchievements(
+                                            user.uid, 
+                                            logros.filter { it.desbloqueado }.map { it.id }
+                                        )
+                                    }
+                                }
+                            },
+                            onLogroClick = { 
+                                selectedLogro = it
+                                navigateTo(Screen.DetalleLogro)
+                            },
                             onPremioClick = { info ->
                                 if (info.logroId != null) {
                                     selectedLogro = repository.getLogroById(info.logroId)
@@ -457,8 +662,17 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                             onNavigate = { selectedPersonaje = it }
                         )
                     }
-                    Screen.DetalleConsumible -> selectedConsumible?.let {
-                        DetailScreen(it.nombre, "Tipo", it.tipo, "Descripción", it.descripcion, getImagePath(it.id, it.tipo))
+                    Screen.DetalleConsumible -> selectedConsumible?.let { cons ->
+                        val currentIndex = filteredConsumibles.indexOfFirst { it.uid == cons.uid }
+                        val prevConsumible = if (currentIndex > 0) filteredConsumibles[currentIndex - 1] else null
+                        val nextConsumible = if (currentIndex != -1 && currentIndex < filteredConsumibles.size - 1) filteredConsumibles[currentIndex + 1] else null
+
+                        DetailConsumibleScreen(
+                            consumible = cons,
+                            prevConsumible = prevConsumible,
+                            nextConsumible = nextConsumible,
+                            onNavigate = { selectedConsumible = it }
+                        )
                     }
                     Screen.GlobalSearch -> GlobalSearchScreen(
                         allItems = allSearchItems,
@@ -599,34 +813,50 @@ fun GlobalSearchScreen(
     Column(Modifier.fillMaxSize()) {
         SearchBar(query, onQueryChange)
         
-        if (query.isEmpty()) {
+        Box(Modifier.fillMaxSize()) {
+            // LOGO DE FONDO (Permanece al buscar)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Escribe para buscar objetos, personajes, logros, maldiciones...", color = Color.Gray)
+                DynamicImage("dice-logo", Modifier.size(240.dp).alpha(0.1f))
             }
-        } else if (filteredResults.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No se encontraron resultados", color = Color.Gray)
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(64.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(8.dp)
-            ) {
-                items(filteredResults) { item ->
-                    Box(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .aspectRatio(1f)
-                            .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
-                            .clickable { onItemClick(item) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val imageName = getImagePath(item.id, item.tipo)
-                        if (imageName != null) {
-                            DynamicImage(imageName, Modifier.size(48.dp))
-                        } else {
-                            Icon(Icons.Default.QuestionMark, contentDescription = null, tint = Color.Gray)
+
+            if (query.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // DynamicImage("dice-logo", Modifier.size(150.dp)) // Eliminado a petición para que solo se vea el tenue
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Escribe para buscar objetos, personajes, logros, maldiciones...",
+                            color = Color.Gray,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else if (filteredResults.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No se encontraron resultados", color = Color.Gray)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(64.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    items(filteredResults) { item ->
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .aspectRatio(1f)
+                                .background(MaterialTheme.colors.surface.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                                .clickable { onItemClick(item) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val imageName = getImagePath(item.id, item.tipo)
+                            if (imageName != null) {
+                                DynamicImage(imageName, Modifier.size(48.dp))
+                            } else {
+                                Icon(Icons.Default.QuestionMark, contentDescription = null, tint = Color.Gray)
+                            }
                         }
                     }
                 }
@@ -643,7 +873,8 @@ fun getImagePath(id: Int, tipo: String): String? {
         "Carta" -> "Pickup_$id"
         "Transformacion" -> "Transformation_$id"
         "Logro" -> "Logro_$id"
-        "Maldicion" -> "Curse_$id"
+        "Maldicion" -> "maldicion_$id"
+        "Sala" -> "sala_$id"
         else -> null
     }
 }
@@ -659,7 +890,18 @@ fun QualityStars(calidad: Int, size: Int = 20) {
 }
 
 @Composable
-fun DetailObjetoScreen(objeto: RemoteObjeto, relatedLogros: List<RemoteLogro>, onLogroClick: (RemoteLogro) -> Unit) {
+fun DetailObjetoScreen(
+    objeto: RemoteObjeto, 
+    relatedLogros: List<RemoteLogro>, 
+    sinergias: List<SinergiaInfo>,
+    salas: List<RemoteSala>,
+    repository: IsaacRepository,
+    onLogroClick: (RemoteLogro) -> Unit,
+    onObjetoClick: (RemoteObjeto) -> Unit,
+    onSalaClick: (RemoteSala) -> Unit,
+    prevObjeto: RemoteObjeto? = null,
+    nextObjeto: RemoteObjeto? = null
+) {
     Column(Modifier.fillMaxSize().padding(16.dp).background(MaterialTheme.colors.background).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val imageName = getImagePath(objeto.id, "Objeto")
@@ -677,11 +919,52 @@ fun DetailObjetoScreen(objeto: RemoteObjeto, relatedLogros: List<RemoteLogro>, o
         QualityStars(objeto.calidad)
         Spacer(Modifier.height(16.dp))
         Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-        Text(text = objeto.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+        DescriptionText(text = objeto.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+
+        if (salas.isNotEmpty()) {
+            Spacer(Modifier.height(32.dp))
+            Text(text = "Salas de Items:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                salas.forEach { sala ->
+                    Row(
+                        Modifier.padding(end = 12.dp)
+                            .clickable { onSalaClick(sala) }
+                            .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DynamicImage("sala_${sala.id}", Modifier.size(32.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(sala.nombre, color = Color.White, style = MaterialTheme.typography.body2)
+                    }
+                }
+            }
+        }
+
+        if (sinergias.isNotEmpty()) {
+            Spacer(Modifier.height(32.dp))
+            Text(text = "Sinergias Especiales:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+            Spacer(Modifier.height(8.dp))
+            sinergias.forEach { sin ->
+                val otherObj = remember(sin.objetoRelacionadoId) { repository.getObjetoById(sin.objetoRelacionadoId) }
+                Row(
+                    Modifier.fillMaxWidth().clickable { otherObj?.let { onObjetoClick(it) } }.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DynamicImage(getImagePath(sin.objetoRelacionadoId, "Objeto") ?: "", Modifier.size(48.dp).padding(end = 16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(otherObj?.nombre ?: "Objeto Desconocido", color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
+                        DescriptionText(sin.descripcion, color = Color.White, style = MaterialTheme.typography.body2)
+                    }
+                }
+                Divider(color = Color.DarkGray.copy(alpha = 0.5f))
+            }
+        }
 
         if (relatedLogros.isNotEmpty()) {
             Spacer(Modifier.height(32.dp))
-            Text(text = "Desbloqueos Relacionados:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+            Text(text = "Desbloqueado con:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
             Spacer(Modifier.height(8.dp))
             relatedLogros.forEach { logro ->
                 Row(Modifier.fillMaxWidth().clickable { onLogroClick(logro) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -690,6 +973,27 @@ fun DetailObjetoScreen(objeto: RemoteObjeto, relatedLogros: List<RemoteLogro>, o
                 }
                 Divider(color = Color.DarkGray.copy(alpha = 0.5f))
             }
+        }
+        
+        Spacer(Modifier.height(32.dp))
+        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            if (prevObjeto != null) {
+                Row(Modifier.clickable { onObjetoClick(prevObjeto) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    DynamicImage(getImagePath(prevObjeto.id, "Objeto") ?: "", Modifier.size(40.dp))
+                }
+            } else Spacer(Modifier.width(1.dp))
+
+            Text(text = "ID: ${objeto.id}", color = Color.Gray.copy(alpha = 0.5f), style = MaterialTheme.typography.caption)
+
+            if (nextObjeto != null) {
+                Row(Modifier.clickable { onObjetoClick(nextObjeto) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DynamicImage(getImagePath(nextObjeto.id, "Objeto") ?: "", Modifier.size(40.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                }
+            } else Spacer(Modifier.width(1.dp))
         }
     }
 }
@@ -710,7 +1014,7 @@ fun DetailLogroScreen(logro: RemoteLogro, rewardConsumibleTipo: String?, onStatu
         }
         Spacer(Modifier.height(24.dp))
         Text(text = "Requisito:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-        Text(text = logro.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+        DescriptionText(text = logro.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
         Spacer(Modifier.height(24.dp))
         Text(text = "Recompensa:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
         val premioId = logro.desbloquea_objeto_id ?: logro.desbloquea_personaje_id ?: logro.desbloquea_consumible_id
@@ -739,7 +1043,7 @@ fun DetailTransformacionScreen(trans: RemoteTransformacion, objetos: List<Remote
         }
         Spacer(Modifier.height(24.dp))
         Text(text = "Efecto:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-        Text(text = trans.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+        DescriptionText(text = trans.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
         Spacer(Modifier.height(24.dp))
         Text(text = "Objetos que contribuyen:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
         Spacer(Modifier.height(8.dp))
@@ -754,24 +1058,78 @@ fun DetailTransformacionScreen(trans: RemoteTransformacion, objetos: List<Remote
 }
 
 @Composable
-fun DetailPersonajeScreen(nombre: String, descripcion: String?, esTainted: Boolean, metodo: String, stats: RemoteEstadisticas?, desbloqueos: List<DesbloqueoInfo>, imageName: String?, prevPersonaje: RemotePersonaje?, nextPersonaje: RemotePersonaje?, onPremioClick: (DesbloqueoInfo) -> Unit, onNavigate: (RemotePersonaje) -> Unit) {
+fun DetailSalaScreen(sala: RemoteSala, objetos: List<RemoteObjeto>, onObjetoClick: (RemoteObjeto) -> Unit) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DynamicImage(getImagePath(sala.id, "Sala") ?: "", Modifier.size(80.dp).padding(end = 16.dp))
+            Text(sala.nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(24.dp))
+        Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+        DescriptionText(text = sala.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+        Spacer(Modifier.height(24.dp))
+        Text(text = "Objetos que pueden aparecer:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+        Spacer(Modifier.height(8.dp))
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(64.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(8.dp)
+        ) {
+            items(objetos) { obj ->
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .aspectRatio(1f)
+                        .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
+                        .clickable { onObjetoClick(obj) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    DynamicImage(getImagePath(obj.id, "Objeto") ?: "", Modifier.size(40.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DetailPersonajeScreen(per: RemotePersonaje, stats: RemoteEstadisticas?, desbloqueos: List<DesbloqueoInfo>, unlockLogros: List<RemoteLogro>, imageName: String?, prevPersonaje: RemotePersonaje?, nextPersonaje: RemotePersonaje?, onLogroStatusChange: (Int, Boolean) -> Unit, onLogroClick: (RemoteLogro) -> Unit, onPremioClick: (DesbloqueoInfo) -> Unit, onNavigate: (RemotePersonaje) -> Unit) {
     val grayScaleFilter = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
     Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (imageName != null) DynamicImage(imageName, Modifier.size(100.dp).padding(end = 16.dp))
-            Text(nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
+            Text(per.nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(24.dp))
         Text(text = "Estado:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-        Text(if (esTainted) "Tainted" else "Normal", color = Color.White, style = MaterialTheme.typography.body1)
-        if (descripcion != null) {
+        Text(if (per.es_tainted) "Tainted" else "Normal", color = Color.White, style = MaterialTheme.typography.body1)
+        if (per.descripcion != null) {
             Spacer(Modifier.height(16.dp))
             Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-            Text(descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+            DescriptionText(per.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
         }
         Spacer(Modifier.height(16.dp))
         Text(text = "Método de Desbloqueo:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-        Text(metodo, color = Color.White, style = MaterialTheme.typography.body1)
+        DescriptionText(per.metodo_desbloqueo ?: "Desbloqueado por defecto", color = Color.White, style = MaterialTheme.typography.body1)
+        
+        if (unlockLogros.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            unlockLogros.forEach { logro ->
+                Row(Modifier.fillMaxWidth().clickable { onLogroClick(logro) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DynamicImage(name = getImagePath(logro.id, "Logro") ?: "", modifier = Modifier.size(56.dp).padding(end = 16.dp), colorFilter = if (!logro.desbloqueado) grayScaleFilter else null)
+                    Column(Modifier.weight(1f)) {
+                        Text(logro.nombre, color = Color.White, style = MaterialTheme.typography.h6, fontWeight = FontWeight.Bold)
+                        DescriptionText(logro.descripcion, color = Color.Gray, style = MaterialTheme.typography.body2)
+                    }
+                    Checkbox(
+                        checked = logro.desbloqueado, 
+                        onCheckedChange = { onLogroStatusChange(logro.id, it) }, 
+                        colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colors.secondary)
+                    )
+                }
+                Divider(color = Color.DarkGray.copy(alpha = 0.5f))
+            }
+        }
+
         stats?.let { s ->
             Spacer(Modifier.height(24.dp))
             Text("Estadísticas Iniciales:", style = MaterialTheme.typography.h6, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
@@ -786,7 +1144,7 @@ fun DetailPersonajeScreen(nombre: String, descripcion: String?, esTainted: Boole
                 if (info.logroId != null) DynamicImage(name = getImagePath(info.logroId, "Logro") ?: "", modifier = Modifier.size(56.dp).padding(end = 16.dp), colorFilter = if (!info.desbloqueado) grayScaleFilter else null) else Box(Modifier.size(56.dp).padding(end = 16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(info.premioNombre, color = Color.White, style = MaterialTheme.typography.h6, fontWeight = FontWeight.Bold)
-                    if (info.logroDescripcion != null) Text(info.logroDescripcion, color = Color.Gray, style = MaterialTheme.typography.body2)
+                    if (info.logroDescripcion != null) DescriptionText(info.logroDescripcion, color = Color.Gray, style = MaterialTheme.typography.body2)
                 }
                 if(info.logroId != null || info.premioId > 0) Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
             }
@@ -796,14 +1154,19 @@ fun DetailPersonajeScreen(nombre: String, descripcion: String?, esTainted: Boole
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             if (prevPersonaje != null) {
                 Row(Modifier.clickable { onNavigate(prevPersonaje) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                    Spacer(Modifier.width(8.dp))
                     DynamicImage(getImagePath(prevPersonaje.id, "Personaje") ?: "", Modifier.size(40.dp))
-                    Spacer(Modifier.width(8.dp)); Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colors.secondary)
                 }
             } else Spacer(Modifier.width(1.dp))
+
+            Text(text = "ID: ${per.id}", color = Color.Gray.copy(alpha = 0.5f), style = MaterialTheme.typography.caption)
+
             if (nextPersonaje != null) {
                 Row(Modifier.clickable { onNavigate(nextPersonaje) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DynamicImage(getImagePath(nextPersonaje.id, "Personaje") ?: "", Modifier.size(40.dp))
+                    Spacer(Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary)
-                    Spacer(Modifier.width(8.dp)); DynamicImage(getImagePath(nextPersonaje.id, "Personaje") ?: "", Modifier.size(40.dp))
                 }
             } else Spacer(Modifier.width(1.dp))
         }
@@ -860,26 +1223,33 @@ fun DrawerContent(user: AuthUser?, onSignIn: () -> Unit, onSignOut: () -> Unit, 
         Spacer(Modifier.height(8.dp))
         Column(Modifier.padding(16.dp)) {
             Text("Sincronización", style = MaterialTheme.typography.caption, color = Color.Gray, fontWeight = FontWeight.Bold)
-            DrawerItem("Sincronizar Steam", Icons.Default.CloudDownload) { onSyncSteam() }
+            DrawerItem("Sincronizar Steam", imageName = "steam-logo") { onSyncSteam() }
             Spacer(Modifier.height(16.dp))
             Text("Navegación", style = MaterialTheme.typography.caption, color = Color.Gray, fontWeight = FontWeight.Bold)
-            DrawerItem("Inicio", Icons.Default.Home) { onNavigate(Screen.Menu) }
+            DrawerItem("Inicio", imageName = "dice-logo") { onNavigate(Screen.Menu) }
             Divider(color = Color.Gray.copy(alpha = 0.2f))
             DrawerItem("Buscador Global", Icons.Default.Search) { onNavigate(Screen.GlobalSearch) }
-            DrawerItem("Objetos", Icons.Default.Info) { onNavigate(Screen.Objetos) }
-            DrawerItem("Personajes", Icons.Default.Person) { onNavigate(Screen.Personajes) }
-            DrawerItem("Consumibles", Icons.AutoMirrored.Filled.List) { onNavigate(Screen.SubMenuConsumibles) }
-            DrawerItem("Transformaciones", Icons.Default.Star) { onNavigate(Screen.Transformaciones) }
-            DrawerItem("Logros", Icons.Default.EmojiEvents) { onNavigate(Screen.Logros) }
-            DrawerItem("Maldiciones", Icons.Default.Warning) { onNavigate(Screen.Maldiciones) }
+            DrawerItem("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
+            DrawerItem("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
+            DrawerItem("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
+            DrawerItem("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
+            DrawerItem("Transformaciones", imageName = "Transformation_1") { onNavigate(Screen.Transformaciones) }
+            DrawerItem("Logros", imageName = "Logro_1") { onNavigate(Screen.Logros) }
+            DrawerItem("Maldiciones", imageName = "maldicion_1") { onNavigate(Screen.Maldiciones) }
         }
     }
 }
 
 @Composable
-fun DrawerItem(text: String, icon: ImageVector, onClick: () -> Unit) {
+fun DrawerItem(text: String, icon: ImageVector? = null, imageName: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colors.secondary); Spacer(Modifier.width(16.dp)); Text(text, style = MaterialTheme.typography.body1, fontWeight = FontWeight.Medium, color = Color.White)
+        if (imageName != null) {
+            DynamicImage(imageName, Modifier.size(24.dp))
+        } else if (icon != null) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colors.secondary)
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(text, style = MaterialTheme.typography.body1, fontWeight = FontWeight.Medium, color = Color.White)
     }
 }
 
@@ -892,14 +1262,16 @@ fun LoadingScreen(status: String) {
 
 @Composable
 fun MenuScreen(onNavigate: (Screen) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        DynamicImage("dice-logo", Modifier.size(160.dp).padding(bottom = 24.dp))
         MenuButton("Buscador Global", Icons.Default.Search) { onNavigate(Screen.GlobalSearch) }
-        MenuButton("Objetos", Icons.Default.Info) { onNavigate(Screen.Objetos) }
-        MenuButton("Personajes", Icons.Default.Person) { onNavigate(Screen.Personajes) }
-        MenuButton("Consumibles", Icons.AutoMirrored.Filled.List) { onNavigate(Screen.SubMenuConsumibles) }
-        MenuButton("Transformaciones", Icons.Default.Star) { onNavigate(Screen.Transformaciones) }
-        MenuButton("Logros", Icons.Default.EmojiEvents) { onNavigate(Screen.Logros) }
-        MenuButton("Maldiciones", Icons.Default.Warning) { onNavigate(Screen.Maldiciones) }
+        MenuButton("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
+        MenuButton("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
+        MenuButton("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
+        MenuButton("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
+        MenuButton("Transformaciones", imageName = "Transformation_1") { onNavigate(Screen.Transformaciones) }
+        MenuButton("Logros", imageName = "Logro_1") { onNavigate(Screen.Logros) }
+        MenuButton("Maldiciones", imageName = "maldicion_1") { onNavigate(Screen.Maldiciones) }
     }
 }
 
@@ -907,13 +1279,32 @@ fun MenuScreen(onNavigate: (Screen) -> Unit) {
 fun SubMenuConsumiblesScreen(tipos: List<String>, onTipoClick: (String) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Top, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Categorías", style = MaterialTheme.typography.h5, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
-        LazyColumn { items(tipos) { tipo -> Button(onClick = { onTipoClick(tipo) }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.surface)) { Text(tipo, color = Color.White) } } }
+        LazyColumn { 
+            items(tipos) { tipo -> 
+                MenuButton(text = tipo, onClick = { onTipoClick(tipo) })
+            } 
+        }
     }
 }
 
 @Composable
-fun MenuButton(text: String, icon: ImageVector, onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.secondary)) { Icon(icon, contentDescription = null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text(text, color = Color.White, fontWeight = FontWeight.Bold) }
+fun MenuButton(text: String, icon: ImageVector? = null, imageName: String? = null, onClick: () -> Unit) {
+    val orangeColor = Color(0xFFFF4500)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        border = BorderStroke(2.dp, orangeColor),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.outlinedButtonColors(backgroundColor = Color.Transparent)
+    ) {
+        if (imageName != null) {
+            DynamicImage(imageName, Modifier.size(24.dp))
+        } else if (icon != null) {
+            Icon(icon, contentDescription = null, tint = orangeColor)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(text, color = Color.White, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable
@@ -926,7 +1317,7 @@ fun <T> ListScreen(itemList: List<T>, getTitle: (T) -> String, getSubtitle: (T) 
                 Column(Modifier.weight(1f)) {
                     Text(getTitle(item), style = MaterialTheme.typography.h6, color = Color.White)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(getSubtitle(item), style = MaterialTheme.typography.body2, color = Color.Gray)
+                        DescriptionText(getSubtitle(item), style = MaterialTheme.typography.body2, color = Color.Gray)
                         if (item is RemoteObjeto) { Spacer(Modifier.width(8.dp)); QualityStars(item.calidad, 14) }
                     }
                 }
@@ -945,9 +1336,58 @@ fun DetailScreen(title: String, label1: String, value1: String, label2: String, 
             Text(title, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(24.dp))
-        Text(text = "$label1:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1); Text(text = value1, color = Color.White, style = MaterialTheme.typography.body1)
+        Text(text = "$label1:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1); DescriptionText(text = value1, color = Color.White, style = MaterialTheme.typography.body1)
         Spacer(Modifier.height(16.dp))
-        Text(text = "$label2:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1); Text(text = value2, color = Color.White, style = MaterialTheme.typography.body1)
+        Text(text = "$label2:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1); DescriptionText(text = value2, color = Color.White, style = MaterialTheme.typography.body1)
+    }
+}
+
+@Composable
+fun DetailConsumibleScreen(
+    consumible: RemoteConsumible,
+    prevConsumible: RemoteConsumible? = null,
+    nextConsumible: RemoteConsumible? = null,
+    onNavigate: (RemoteConsumible) -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(16.dp).background(MaterialTheme.colors.background).verticalScroll(rememberScrollState())) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val imageName = getImagePath(consumible.id, consumible.tipo)
+            if (imageName != null) {
+                DynamicImage(imageName, Modifier.size(80.dp).padding(end = 16.dp))
+            }
+            Text(consumible.nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
+        }
+        
+        Spacer(Modifier.height(24.dp))
+        Text(text = "Tipo:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+        Text(text = consumible.tipo, color = Color.White, style = MaterialTheme.typography.body1)
+        Spacer(Modifier.height(16.dp))
+        Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+        DescriptionText(text = consumible.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+
+        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(32.dp))
+        
+        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            if (prevConsumible != null) {
+                Row(Modifier.clickable { onNavigate(prevConsumible) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    DynamicImage(getImagePath(prevConsumible.id, prevConsumible.tipo) ?: "", Modifier.size(40.dp))
+                }
+            } else Spacer(Modifier.width(1.dp))
+
+            // No se muestra el ID por petición
+            Spacer(Modifier.width(1.dp))
+
+            if (nextConsumible != null) {
+                Row(Modifier.clickable { onNavigate(nextConsumible) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DynamicImage(getImagePath(nextConsumible.id, nextConsumible.tipo) ?: "", Modifier.size(40.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                }
+            } else Spacer(Modifier.width(1.dp))
+        }
     }
 }
 
@@ -962,4 +1402,50 @@ fun DynamicImage(name: String, modifier: Modifier, colorFilter: ColorFilter? = n
     }.value
     if (imageBitmap != null) Image(bitmap = imageBitmap, contentDescription = null, modifier = modifier, colorFilter = colorFilter)
     else Box(modifier = modifier.background(Color.DarkGray, shape = RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Gray) }
+}
+
+@Composable
+fun DescriptionText(text: String, style: TextStyle = MaterialTheme.typography.body1, color: Color = Color.White) {
+    val iconMapping = mapOf(
+        "Tears" to "lagrimas_icono",
+        "Damage" to "dano_icono",
+        "Shotspeed" to "velocidad-disparo_icono",
+        "Range" to "rango_icono",
+        "Speed" to "velocidad_icono",
+        "Luck" to "suerte_icono",
+        "Heart" to "vida_icono"
+    )
+
+    val regex = Regex("\\{\\{([^}]*)\\}\\}")
+    val annotatedString = buildAnnotatedString {
+        var lastIndex = 0
+        regex.findAll(text).forEach { matchResult ->
+            append(text.substring(lastIndex, matchResult.range.first))
+            val key = matchResult.groupValues[1]
+            if (iconMapping.containsKey(key)) {
+                appendInlineContent(key, "[icon]")
+            }
+            lastIndex = matchResult.range.last + 1
+        }
+        append(text.substring(lastIndex))
+    }
+
+    val inlineContent = iconMapping.mapValues { entry ->
+        InlineTextContent(
+            Placeholder(
+                width = 18.sp,
+                height = 18.sp,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+            )
+        ) {
+            DynamicImage(entry.value, Modifier.fillMaxSize())
+        }
+    }
+
+    Text(
+        text = annotatedString,
+        inlineContent = inlineContent,
+        style = style,
+        color = color
+    )
 }

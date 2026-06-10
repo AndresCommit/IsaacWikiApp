@@ -4,3 +4,5 @@ interface SyncManager {
     suspend fun uploadAchievements(userId: String, achievementIds: List<Int>)
     suspend fun downloadAchievements(userId: String): List<Int>
 }
+
+

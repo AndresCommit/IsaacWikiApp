@@ -57,17 +57,13 @@ private class IsaacDatabaseImpl(
       driver.execute(null, """
           |CREATE TABLE Estadisticas_Personaje (
           |    personaje_id INTEGER PRIMARY KEY,
-          |
-          |    -- NUEVO SISTEMA DE SALUD
           |    corazones_rojos INTEGER NOT NULL DEFAULT 0,
           |    corazones_alma INTEGER NOT NULL DEFAULT 0,
           |    corazones_negros INTEGER NOT NULL DEFAULT 0,
           |    corazones_hueso INTEGER NOT NULL DEFAULT 0,
           |    corazones_moneda INTEGER NOT NULL DEFAULT 0,
-          |    manto_sagrado INTEGER DEFAULT 0, -- Para The Lost
-          |    salud_aleatoria INTEGER DEFAULT 0, -- Para Eden
-          |
-          |    -- Resto de estadísticas
+          |    manto_sagrado INTEGER DEFAULT 0,
+          |    salud_aleatoria INTEGER DEFAULT 0,
           |    velocidad REAL NOT NULL,
           |    lagrimas REAL NOT NULL,
           |    dano REAL NOT NULL,
@@ -119,7 +115,6 @@ private class IsaacDatabaseImpl(
           |    nombre TEXT NOT NULL,
           |    descripcion TEXT NOT NULL,
           |    desbloqueado INTEGER DEFAULT 0,
-          |    steam_api_name TEXT,
           |    desbloquea_personaje_id INTEGER,
           |    desbloquea_objeto_id INTEGER,
           |    desbloquea_consumible_id INTEGER,
@@ -145,6 +140,22 @@ private class IsaacDatabaseImpl(
           |    nombre TEXT NOT NULL,
           |    descripcion TEXT NOT NULL,
           |    notas TEXT
+          |)
+          """.trimMargin(), 0)
+      driver.execute(null, """
+          |CREATE TABLE Salas (
+          |    id INTEGER PRIMARY KEY,
+          |    nombre TEXT NOT NULL,
+          |    descripcion TEXT NOT NULL
+          |)
+          """.trimMargin(), 0)
+      driver.execute(null, """
+          |CREATE TABLE Sala_Objeto (
+          |    sala_id INTEGER NOT NULL,
+          |    objeto_id INTEGER NOT NULL,
+          |    PRIMARY KEY (sala_id, objeto_id),
+          |    FOREIGN KEY (sala_id) REFERENCES Salas(id) ON DELETE CASCADE,
+          |    FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE CASCADE
           |)
           """.trimMargin(), 0)
       return QueryResult.Unit
