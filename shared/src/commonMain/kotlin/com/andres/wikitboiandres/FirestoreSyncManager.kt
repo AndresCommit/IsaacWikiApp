@@ -2,6 +2,11 @@ package com.andres.wikitboiandres
 
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.firestore.firestore
+import kotlinx.serialization.Serializable
+
+// Clase que permite a Kotlin serializar los datos para Firebase correctamente
+@Serializable
+data class UserAchievements(val completedAchievements: List<Int> = emptyList())
 
 class FirestoreSyncManager : SyncManager {
     private val firestore = Firebase.firestore
@@ -11,28 +16,32 @@ class FirestoreSyncManager : SyncManager {
         if (userId.isBlank()) return
         try {
             val document = collection.document(userId)
-            // Usamos merge = true para actualizar solo el campo de logros
-            document.set(mapOf("completedAchievements" to achievementIds), merge = true)
+            // Guardamos usando la clase serializable
+            document.set(UserAchievements(achievementIds), merge = true)
+            println("Sync: Subida exitosa a la nube")
         } catch (e: Exception) {
-            println("Error uploadAchievements KMP: ${e.message}")
+            println("Sync: Error uploadAchievements: ${e.message}")
         }
     }
 
-    override suspend fun downloadAchievements(userId: String): List<Int> {
-        if (userId.isBlank()) return emptyList()
+    override suspend fun downloadAchievements(userId: String): List<Int>? {
+        if (userId.isBlank()) return null
         return try {
             val snapshot = collection.document(userId).get()
-            if (snapshot.exists) {
-                // GitLive devuelve un Map al usar data()
-                val data: Map<String, Any?> = snapshot.data()
-                val list = data["completedAchievements"] as? List<*>
-                list?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList()
-            } else {
-                emptyList()
+            if (!snapshot.exists) {
+                println("Sync: Usuario nuevo, sin logros en la nube")
+                return emptyList()
             }
+
+            // Extraemos los datos usando la clase fuertemente tipada (Adiós al error Any?)
+            val userDoc = snapshot.data<UserAchievements>()
+            val result = userDoc.completedAchievements
+
+            println("Sync: Descargados ${result.size} logros correctamente")
+            result
         } catch (e: Exception) {
-            println("Error downloadAchievements KMP: ${e.message}")
-            emptyList()
+            println("Sync: Error crítico en descarga: ${e.message}")
+            null
         }
     }
 }

@@ -83,6 +83,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     val scaffoldState = rememberScaffoldState()
     
     var currentScreen by remember { mutableStateOf(Screen.Loading) }
+    var isDataLoaded by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Cargando datos...") }
     val navigationStack = remember { mutableStateListOf<Screen>() }
 
@@ -146,34 +147,49 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     var selectedMaldicion by remember { mutableStateOf<RemoteMaldicion?>(null) }
     var selectedSala by remember { mutableStateOf<RemoteSala?>(null) }
 
-    val syncAchievements = suspend {
+    // Asegúrate de tener el scope declarado arriba en la función App
+    // val scope = rememberCoroutineScope()
+
+    val syncAchievements: (isManualAction: Boolean) -> Unit = { isManualAction ->
         val user = currentUser
         if (user != null) {
-            // 1. Obtener lista actual de logros locales (por si el usuario marcó algunos sin sesión)
-            val currentLocalLogros = repository.getAllLogros()
-            val localUnlockedIds = currentLocalLogros.filter { it.desbloqueado }.map { it.id }.toSet()
-            
-            // 2. Descargar lista de logros de Firestore
-            val remoteIds = syncManager.downloadAchievements(user.uid).toSet()
-            
-            // 3. Combinar ambas listas (Unión)
-            val mergedIds = (localUnlockedIds + remoteIds).toList()
-            
-            // 4. Si hay diferencias, subir la lista combinada a Firestore
-            if (mergedIds.size > remoteIds.size) {
-                syncManager.uploadAchievements(user.uid, mergedIds)
-            }
-            
-            // 5. Si hay logros remotos que no están marcados localmente, actualizar DB local
-            if (mergedIds.size > localUnlockedIds.size) {
-                mergedIds.forEach { id ->
-                    repository.updateLogroStatus(id, true)
+            scope.launch {
+                try {
+                    val localLogros = repository.getAllLogros()
+                    val localUnlockedIds = localLogros.filter { it.desbloqueado }.map { it.id }
+
+                    if (isManualAction) {
+                        println("Sync: Acción manual. Sobrescribiendo la nube con progreso local.")
+                        syncManager.uploadAchievements(user.uid, localUnlockedIds)
+                    } else {
+                        val remoteIds = syncManager.downloadAchievements(user.uid)
+
+                        if (remoteIds != null) {
+                            val mergedIds = (localUnlockedIds + remoteIds).toSet()
+
+                            if (mergedIds.size > localUnlockedIds.size) {
+                                println("Sync: Actualizando DB local con logros de la nube")
+                                mergedIds.forEach { id ->
+                                    repository.updateLogroStatus(id, true)
+                                }
+                                logros = repository.getAllLogros()
+                                selectedLogro?.let { current ->
+                                    selectedLogro = repository.getLogroById(current.id)
+                                }
+                            }
+
+                            if (mergedIds.size > remoteIds.size) {
+                                println("Sync: Subiendo progreso local fusionado a la nube")
+                                syncManager.uploadAchievements(user.uid, mergedIds.toList())
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("Sync: Error inesperado: ${e.message}")
                 }
-                logros = repository.getAllLogros()
             }
         }
     }
-
     LaunchedEffect(Unit) {
         try {
             if (repository.getAllObjetosCount() == 0L) {
@@ -199,20 +215,16 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
             maldiciones = repository.getAllMaldiciones()
             salas = repository.getAllSalas()
             
-            // Sincronizar si ya hay un usuario al iniciar
-            if (currentUser != null) {
-                syncAchievements()
-            }
-
+            isDataLoaded = true
             currentScreen = Screen.Menu
         } catch (e: Exception) {
             status = "Error: ${e.message}"
         }
     }
 
-    LaunchedEffect(currentUser) {
-        if (currentUser != null) {
-            syncAchievements()
+    LaunchedEffect(currentUser, isDataLoaded) {
+        if (currentUser != null && isDataLoaded) {
+            syncAchievements(false)
         }
     }
 
@@ -352,11 +364,13 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                     Screen.ConsumiblesPorTipo -> Column {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(end = 8.dp)) {
                             Box(modifier = Modifier.weight(1f)) {
-                                if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta") {
+                                val validTypes = listOf("Trinket", "Carta", "Pildora", "Consumible", "Pickup")
+
+                                if (selectedTipoConsumible in validTypes) {
                                     SearchBar(searchQueryConsumibles) { searchQueryConsumibles = it }
                                 }
                             }
-                            if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta") {
+                            if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta" || selectedTipoConsumible == "Píldora" || selectedTipoConsumible == "Pildora" || selectedTipoConsumible == "Consumible") {
                                 IconButton(onClick = { isConsumiblesGridView = !isConsumiblesGridView }) {
                                     Icon(
                                         imageVector = if (isConsumiblesGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
@@ -366,7 +380,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                 }
                             }
                         }
-                        if (isConsumiblesGridView && (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta")) {
+                        if (isConsumiblesGridView && (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta" || selectedTipoConsumible == "Píldora" || selectedTipoConsumible == "Pildora" || selectedTipoConsumible == "Consumible")) {
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(80.dp),
                                 modifier = Modifier.fillMaxSize(),
@@ -384,12 +398,12 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        DynamicImage(getImagePath(cons.id, cons.tipo) ?: "", Modifier.size(48.dp))
+                                        DynamicImage(getImagePath(cons.id, cons.tipo, cons.uid) ?: "", Modifier.size(48.dp))
                                     }
                                 }
                             }
                         } else {
-                            ListScreen(filteredConsumibles, { it.nombre }, { it.tipo }, { getImagePath(it.id, it.tipo) }, 48) {
+                            ListScreen(filteredConsumibles, { it.nombre }, { it.tipo }, { getImagePath(it.id, it.tipo, it.uid) }, 48) {
                                 selectedConsumible = it
                                 navigateTo(Screen.DetalleConsumible)
                             }
@@ -460,14 +474,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                             onCheckedChange = { newVal ->
                                                 repository.updateLogroStatus(logro.id, newVal)
                                                 logros = repository.getAllLogros()
-                                                currentUser?.let { user ->
-                                                    scope.launch {
-                                                        syncManager.uploadAchievements(
-                                                            user.uid, 
-                                                            logros.filter { it.desbloqueado }.map { it.id }
-                                                        )
-                                                    }
-                                                }
+                                                syncAchievements(true)
                                             },
                                             modifier = Modifier.align(Alignment.TopEnd).size(24.dp),
                                             colors = CheckboxDefaults.colors(
@@ -493,14 +500,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                         onCheckedChange = { newVal ->
                                             repository.updateLogroStatus(logro.id, newVal)
                                             logros = repository.getAllLogros()
-                                            currentUser?.let { user ->
-                                                scope.launch {
-                                                    syncManager.uploadAchievements(
-                                                        user.uid, 
-                                                        logros.filter { it.desbloqueado }.map { it.id }
-                                                    )
-                                                }
-                                            }
+                                            syncAchievements(true)
                                         },
                                         colors = CheckboxDefaults.colors(
                                             checkedColor = orangeColor,
@@ -571,24 +571,18 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         DetailLogroScreen(
                             logro = logro, 
                             rewardConsumibleTipo = rewardConsumible?.tipo,
+                            rewardConsumibleUid = rewardConsumible?.uid,
                             onStatusChange = { newVal ->
                                 repository.updateLogroStatus(logro.id, newVal)
                                 logros = repository.getAllLogros()
                                 selectedLogro = repository.getLogroById(logro.id)
-                                currentUser?.let { user ->
-                                    scope.launch {
-                                        syncManager.uploadAchievements(
-                                            user.uid, 
-                                            logros.filter { it.desbloqueado }.map { it.id }
-                                        )
-                                    }
-                                }
+                                scope.launch { syncAchievements(true) }
                             }
                         ) { type, id ->
                             when(type) {
                                 "Objeto" -> { selectedObjeto = repository.getObjetoById(id); navigateTo(Screen.DetalleObjeto) }
                                 "Personaje" -> { selectedPersonaje = repository.getPersonajeById(id); navigateTo(Screen.DetallePersonaje) }
-                                "Consumible", "Trinket", "Carta" -> { 
+                                "Consumible", "Trinket", "Carta", "Píldora", "Pildora" -> { 
                                     selectedConsumible = if (rewardConsumible != null && id == rewardConsumible.id) rewardConsumible 
                                                          else repository.getConsumibleById(id)
                                     navigateTo(Screen.DetalleConsumible) 
@@ -625,14 +619,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                             onLogroStatusChange = { logroId, newVal ->
                                 repository.updateLogroStatus(logroId, newVal)
                                 logros = repository.getAllLogros()
-                                currentUser?.let { user ->
-                                    scope.launch {
-                                        syncManager.uploadAchievements(
-                                            user.uid, 
-                                            logros.filter { it.desbloqueado }.map { it.id }
-                                        )
-                                    }
-                                }
+                                syncAchievements(true)
                             },
                             onLogroClick = { 
                                 selectedLogro = it
@@ -722,6 +709,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
         )
     }
 }
+
 @Composable
 fun SteamSyncDialog(isSyncing: Boolean, onDismiss: () -> Unit, onSync: (String, String) -> Unit) {
     var apiKey by remember { mutableStateOf("") }
@@ -851,7 +839,11 @@ fun GlobalSearchScreen(
                                 .clickable { onItemClick(item) },
                             contentAlignment = Alignment.Center
                         ) {
-                            val imageName = getImagePath(item.id, item.tipo)
+                            val imageName = if (item.original is RemoteConsumible) {
+                                getImagePath(item.id, item.tipo, item.original.uid)
+                            } else {
+                                getImagePath(item.id, item.tipo)
+                            }
                             if (imageName != null) {
                                 DynamicImage(imageName, Modifier.size(48.dp))
                             } else {
@@ -865,7 +857,7 @@ fun GlobalSearchScreen(
     }
 }
 
-fun getImagePath(id: Int, tipo: String): String? {
+fun getImagePath(id: Int, tipo: String, uid: Int? = null): String? {
     return when (tipo) {
         "Objeto" -> "collectibles_${id.toString().padStart(3, '0')}"
         "Trinket" -> "collectibles_${2000 + id}"
@@ -875,6 +867,11 @@ fun getImagePath(id: Int, tipo: String): String? {
         "Logro" -> "Logro_$id"
         "Maldicion" -> "maldicion_$id"
         "Sala" -> "sala_$id"
+        "Píldora", "Pildora" -> {
+            val pillNumber = (id % 14) + 1
+            "pill_$pillNumber"
+        }
+        "Consumible", "Pickup" -> if (uid != null) "consumible_$uid" else null
         else -> null
     }
 }
@@ -999,7 +996,7 @@ fun DetailObjetoScreen(
 }
 
 @Composable
-fun DetailLogroScreen(logro: RemoteLogro, rewardConsumibleTipo: String?, onStatusChange: (Boolean) -> Unit, onPremioClick: (String, Int) -> Unit) {
+fun DetailLogroScreen(logro: RemoteLogro, rewardConsumibleTipo: String?, rewardConsumibleUid: Int?, onStatusChange: (Boolean) -> Unit, onPremioClick: (String, Int) -> Unit) {
     val grayScaleFilter = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
     Column(Modifier.fillMaxSize().padding(16.dp).background(MaterialTheme.colors.background).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1022,9 +1019,9 @@ fun DetailLogroScreen(logro: RemoteLogro, rewardConsumibleTipo: String?, onStatu
             logro.desbloquea_objeto_id != null -> "Objeto"; logro.desbloquea_personaje_id != null -> "Personaje"; logro.desbloquea_consumible_id != null -> rewardConsumibleTipo ?: "Consumible"; else -> null
         }
         if (premioId != null && premioTipo != null) {
-            val label = if (premioTipo == "Trinket" || premioTipo == "Carta" || premioTipo == "Consumible") "Consumible" else premioTipo
+            val label = if (premioTipo == "Trinket" || premioTipo == "Carta" || premioTipo == "Consumible" || premioTipo == "Píldora" || premioTipo == "Pildora") "Consumible" else premioTipo
             Row(Modifier.fillMaxWidth().clickable { onPremioClick(premioTipo, premioId) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                DynamicImage(getImagePath(premioId, premioTipo) ?: "", Modifier.size(48.dp).padding(end = 16.dp))
+                DynamicImage(getImagePath(premioId, premioTipo, rewardConsumibleUid) ?: "", Modifier.size(48.dp).padding(end = 16.dp))
                 Text("Ver $label desbloqueado", color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.body1, fontWeight = FontWeight.Medium)
             }
         } else {
@@ -1274,15 +1271,72 @@ fun MenuScreen(onNavigate: (Screen) -> Unit) {
         MenuButton("Maldiciones", imageName = "maldicion_1") { onNavigate(Screen.Maldiciones) }
     }
 }
-
+@Composable
+fun BentoCategoryButton(text: String, imageName: String, onClick: () -> Unit) {
+    val orangeColor = Color(0xFFFF4500)
+    Card(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .padding(8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(2.dp, orangeColor),
+        backgroundColor = Color.Transparent,
+        elevation = 0.dp
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            DynamicImage(imageName, Modifier.size(80.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = text,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
 @Composable
 fun SubMenuConsumiblesScreen(tipos: List<String>, onTipoClick: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Top, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Categorías", style = MaterialTheme.typography.h5, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
-        LazyColumn { 
-            items(tipos) { tipo -> 
-                MenuButton(text = tipo, onClick = { onTipoClick(tipo) })
-            } 
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Top,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "Consumibles",
+            style = MaterialTheme.typography.h4,
+            color = MaterialTheme.colors.secondary,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 24.dp, top = 16.dp)
+        )
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(tipos) { tipo ->
+                val representativeImage = when (tipo) {
+                    "Trinket" -> "collectibles_2026"
+                    "Carta" -> "Pickup_80"
+                    "Píldora", "Pildora" -> "pill_12"
+                    "Pickup", "Consumible" -> "consumible_369"
+                    else -> "dice-logo"
+                }
+
+                BentoCategoryButton(
+                    text = tipo,
+                    imageName = representativeImage,
+                    onClick = { onTipoClick(tipo) }
+                )
+            }
         }
     }
 }
@@ -1351,7 +1405,7 @@ fun DetailConsumibleScreen(
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp).background(MaterialTheme.colors.background).verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val imageName = getImagePath(consumible.id, consumible.tipo)
+            val imageName = getImagePath(consumible.id, consumible.tipo, consumible.uid)
             if (imageName != null) {
                 DynamicImage(imageName, Modifier.size(80.dp).padding(end = 16.dp))
             }
@@ -1373,16 +1427,16 @@ fun DetailConsumibleScreen(
                 Row(Modifier.clickable { onNavigate(prevConsumible) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colors.secondary)
                     Spacer(Modifier.width(8.dp))
-                    DynamicImage(getImagePath(prevConsumible.id, prevConsumible.tipo) ?: "", Modifier.size(40.dp))
+                    DynamicImage(getImagePath(prevConsumible.id, prevConsumible.tipo, prevConsumible.uid) ?: "", Modifier.size(40.dp))
                 }
             } else Spacer(Modifier.width(1.dp))
 
-            // No se muestra el ID por petición
-            Spacer(Modifier.width(1.dp))
+            // Se muestra el ID o UID tenue como en el resto
+            Text(text = "UID: ${consumible.uid}", color = Color.Gray.copy(alpha = 0.5f), style = MaterialTheme.typography.caption)
 
             if (nextConsumible != null) {
                 Row(Modifier.clickable { onNavigate(nextConsumible) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    DynamicImage(getImagePath(nextConsumible.id, nextConsumible.tipo) ?: "", Modifier.size(40.dp))
+                    DynamicImage(getImagePath(nextConsumible.id, nextConsumible.tipo, nextConsumible.uid) ?: "", Modifier.size(40.dp))
                     Spacer(Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary)
                 }

@@ -398,7 +398,7 @@ class IsaacRepository(
 
     suspend fun fetchAndSaveSalas() {
         try {
-            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/salas-items"
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/salas-items.json"
             val response: String = client.get(url).bodyAsText()
             val cleanJson = if (response.trim().startsWith("[")) response else "[$response]"
             val json = Json { ignoreUnknownKeys = true }
