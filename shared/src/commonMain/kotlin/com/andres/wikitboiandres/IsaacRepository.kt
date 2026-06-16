@@ -1,7 +1,6 @@
 package com.andres.wikitboiandres
 
 import com.andres.wikitboiandres.db.IsaacDatabase
-import com.andres.wikitboiandres.models.SteamAchievementResponse
 import com.andres.wikitboiandres.network.SteamApiService
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -120,12 +119,30 @@ data class RemoteSala(
     val objetos_ids: List<String> = emptyList()
 )
 
+@Serializable
+data class RemotePiso(
+    val id: Int,
+    val nombre: String,
+    val descripcion: String
+)
+
+@Serializable
+data class RemoteJefe(
+    val id: Int,
+    val nombre: String,
+    val vida_base: Int,
+    val descripcion: String,
+    val comportamiento: String,
+    val notas: String,
+    val pisos_ids: List<Int> = emptyList()
+)
 data class SinergiaInfo(
     val objetoRelacionadoId: Int,
     val descripcion: String
 )
 
 data class DesbloqueoInfo(
+    val marcaId: Long,
     val marcaNombre: String,
     val premioNombre: String,
     val premioId: Int,
@@ -142,13 +159,15 @@ class IsaacRepository(
     private val steamApiService: SteamApiService
 ) {
 
+    private val jsonConfig = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+        explicitNulls = false
+    }
+
     private val client = HttpClient {
         install(ContentNegotiation) {
-            val jsonConfig = Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-                coerceInputValues = true
-            }
             json(jsonConfig, ContentType.Application.Json)
             json(jsonConfig, ContentType.Text.Plain)
         }
@@ -401,8 +420,7 @@ class IsaacRepository(
             val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/salas-items.json"
             val response: String = client.get(url).bodyAsText()
             val cleanJson = if (response.trim().startsWith("[")) response else "[$response]"
-            val json = Json { ignoreUnknownKeys = true }
-            val salas: List<RemoteSala> = json.decodeFromString(cleanJson)
+            val salas: List<RemoteSala> = jsonConfig.decodeFromString(cleanJson)
 
             database.isaacDatabaseQueries.transaction {
                 salas.forEach { sala ->
@@ -415,6 +433,58 @@ class IsaacRepository(
                         objIdStr.toLongOrNull()?.let { objId ->
                             database.isaacDatabaseQueries.insertSalaObjeto(sala.id.toLong(), objId)
                         }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    suspend fun fetchAndSavePisos() {
+        try {
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/pisos.json"
+            val pisos: List<RemotePiso> = client.get(url).body()
+
+            database.isaacDatabaseQueries.transaction {
+                pisos.forEach { piso ->
+                    database.isaacDatabaseQueries.insertPiso(
+                        piso.id.toLong(),
+                        piso.nombre,
+                        piso.descripcion
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    suspend fun fetchAndSaveJefes() {
+        try {
+            val url = "https://raw.githubusercontent.com/AndresCommit/isaac-resources/main/jefes.json"
+            val jefes: List<RemoteJefe> = client.get(url).body()
+
+            database.isaacDatabaseQueries.transaction {
+                jefes.forEach { jefe ->
+                    // 1. Se insertan los datos estáticos del jefe
+                    database.isaacDatabaseQueries.insertJefe(
+                        jefe.id.toLong(),
+                        jefe.nombre,
+                        jefe.vida_base.toLong(),
+                        jefe.descripcion,
+                        jefe.comportamiento,
+                        jefe.notas
+                    )
+
+                    // 2. Se insertan los enlaces correspondientes en la tabla intermedia
+                    jefe.pisos_ids.forEach { pisoId ->
+                        database.isaacDatabaseQueries.insertJefePiso(
+                            jefe.id.toLong(),
+                            pisoId.toLong()
+                        )
                     }
                 }
             }
@@ -509,6 +579,17 @@ class IsaacRepository(
         }.sortedBy { it.nombre }
     }
 
+    fun getAllPisos(): List<RemotePiso> {
+        return database.isaacDatabaseQueries.selectAllPisos().executeAsList().map {
+            RemotePiso(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                descripcion = it.descripcion
+            )
+        }.sortedBy { it.id }
+    }
+
+
     fun getObjetosByTransformacion(transformacionId: Int): List<RemoteObjeto> {
         return database.isaacDatabaseQueries.getObjetosByTransformacion(transformacionId.toLong()).executeAsList().map {
             RemoteObjeto(
@@ -527,6 +608,7 @@ class IsaacRepository(
             .map {
                 DesbloqueoInfo(
                     marcaNombre = it.marcaNombre,
+                    marcaId = it.marcaId,
                     premioNombre = it.logroNombre ?: "Desbloqueo desconocido",
                     premioId = (it.objetoId ?: it.consumibleId ?: it.pId ?: 0).toInt(),
                     esObjeto = it.objetoId != null,
@@ -607,6 +689,12 @@ class IsaacRepository(
         }
     }
 
+    fun getPisoById(id: Int): RemotePiso? {
+        return database.isaacDatabaseQueries.getPisoById(id.toLong()).executeAsOneOrNull()?.let {
+            RemotePiso(it.id.toInt(), it.nombre, it.descripcion)
+        }
+    }
+
     fun getLogrosByRewardObjeto(objetoId: Int): List<RemoteLogro> {
         return database.isaacDatabaseQueries.getLogrosByRewardObjeto(objetoId.toLong()).executeAsList().map {
             RemoteLogro(
@@ -680,6 +768,33 @@ class IsaacRepository(
         return database.isaacDatabaseQueries.selectAllSalas().executeAsList().size.toLong()
     }
 
+    fun getAllPisosCount(): Long {
+        return database.isaacDatabaseQueries.selectAllPisos().executeAsList().size.toLong()
+    }
+    fun getJefesByPiso(pisoId: Int): List<RemoteJefe> {
+        return database.isaacDatabaseQueries.getJefesByPiso(pisoId.toLong()) { id, nombre, vida, desc, comp, notas ->
+            RemoteJefe(id.toInt(), nombre, vida.toInt(), desc, comp, notas)
+        }.executeAsList()
+    }
+
+    fun getPisosByJefe(jefeId: Int): List<RemotePiso> {
+        return database.isaacDatabaseQueries.getPisosByJefe(jefeId.toLong()) { id, nombre, desc ->
+            RemotePiso(id.toInt(), nombre, desc)
+        }.executeAsList()
+    }
+    fun getAllJefes(): List<RemoteJefe> {
+        return database.isaacDatabaseQueries.selectAllJefes().executeAsList().map {
+            RemoteJefe(
+                id = it.id.toInt(),
+                nombre = it.nombre,
+                vida_base = it.vida_base.toInt(),
+                descripcion = it.descripcion,
+                comportamiento = it.comportamiento,
+                notas = it.notas,
+                pisos_ids = emptyList() // Se inicializa vacía para la lista general
+            )
+        }.sortedBy { it.id }
+    }
     suspend fun syncAchievementsWithSteam(apiKey: String, steamId: String): Result<Unit> {
         return try {
             val steamResponse = steamApiService.getPlayerAchievements(apiKey, steamId)

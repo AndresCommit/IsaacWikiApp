@@ -158,6 +158,32 @@ private class IsaacDatabaseImpl(
           |    FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE CASCADE
           |)
           """.trimMargin(), 0)
+      driver.execute(null, """
+          |CREATE TABLE Pisos (
+          |    id INTEGER PRIMARY KEY,
+          |    nombre TEXT NOT NULL,
+          |    descripcion TEXT NOT NULL
+          |)
+          """.trimMargin(), 0)
+      driver.execute(null, """
+          |CREATE TABLE Jefes (
+          |    id INTEGER PRIMARY KEY,
+          |    nombre TEXT NOT NULL,
+          |    vida_base INTEGER NOT NULL,
+          |    descripcion TEXT NOT NULL,
+          |    comportamiento TEXT NOT NULL,
+          |    notas TEXT NOT NULL
+          |)
+          """.trimMargin(), 0)
+      driver.execute(null, """
+          |CREATE TABLE Jefe_Piso (
+          |    jefe_id INTEGER NOT NULL,
+          |    piso_id INTEGER NOT NULL,
+          |    PRIMARY KEY (jefe_id, piso_id),
+          |    FOREIGN KEY (jefe_id) REFERENCES Jefes(id) ON DELETE CASCADE,
+          |    FOREIGN KEY (piso_id) REFERENCES Pisos(id) ON DELETE CASCADE
+          |)
+          """.trimMargin(), 0)
       return QueryResult.Unit
     }
 

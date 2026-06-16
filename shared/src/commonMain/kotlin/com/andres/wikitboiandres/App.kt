@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import wikitboiandres.shared.generated.resources.Res
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,12 +53,12 @@ import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.decodeToImageBitmap
-import wikitboiandres.shared.generated.resources.Res
 
 enum class Screen {
-    Loading, Menu, Objetos, Personajes, SubMenuConsumibles, ConsumiblesPorTipo, DetalleObjeto, DetallePersonaje, DetalleConsumible, GlobalSearch, Transformaciones, DetalleTransformacion, Logros, DetalleLogro, Maldiciones, DetalleMaldicion, Salas, DetalleSala
+    Loading, Menu, Objetos, Personajes, SubMenuConsumibles, ConsumiblesPorTipo, DetalleObjeto, DetallePersonaje, DetalleConsumible, GlobalSearch, Transformaciones, DetalleTransformacion, Logros, DetalleLogro, Maldiciones, DetalleMaldicion, Salas, DetalleSala, Jefes, DetalleJefe, Pisos, DetallePiso, Perfil
 }
 
 data class SearchItem(val id: Int, val nombre: String, val tipo: String, val original: Any)
@@ -97,11 +99,14 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     var logros by remember { mutableStateOf(emptyList<RemoteLogro>()) }
     var maldiciones by remember { mutableStateOf(emptyList<RemoteMaldicion>()) }
     var salas by remember { mutableStateOf(emptyList<RemoteSala>()) }
-    
+    var jefes by remember { mutableStateOf(emptyList<RemoteJefe>()) }
+    var pisos by remember { mutableStateOf(emptyList<RemotePiso>()) }
+
     var searchQueryObjetos by remember { mutableStateOf("") }
     var searchQueryConsumibles by remember { mutableStateOf("") }
     var searchQueryLogros by remember { mutableStateOf("") }
     var searchQueryMaldiciones by remember { mutableStateOf("") }
+    var searchQueryJefes by remember { mutableStateOf("") }
     var searchQueryGlobal by remember { mutableStateOf("") }
 
     var isObjectsGridView by remember { mutableStateOf(false) }
@@ -129,13 +134,15 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
         if (searchQueryMaldiciones.isEmpty()) maldiciones else maldiciones.filter { it.nombre.contains(searchQueryMaldiciones, ignoreCase = true) }
     }
 
-    val allSearchItems = remember(objetos, personajes, consumibles, logros, maldiciones) {
+    val allSearchItems = remember(objetos, personajes, consumibles, logros, maldiciones, jefes, pisos) {
         val list = mutableListOf<SearchItem>()
         objetos.forEach { list.add(SearchItem(it.id, it.nombre, "Objeto", it)) }
         personajes.forEach { list.add(SearchItem(it.id, it.nombre, "Personaje", it)) }
         consumibles.forEach { list.add(SearchItem(it.id, it.nombre, it.tipo, it)) }
         logros.forEach { list.add(SearchItem(it.id, it.nombre, "Logro", it)) }
         maldiciones.forEach { list.add(SearchItem(it.id, it.nombre, "Maldicion", it)) }
+        jefes.forEach { list.add(SearchItem(it.id, it.nombre, "Jefe", it)) }
+        pisos.forEach { list.add(SearchItem(it.id, it.nombre, "Piso", it)) }
         list
     }
 
@@ -146,9 +153,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     var selectedLogro by remember { mutableStateOf<RemoteLogro?>(null) }
     var selectedMaldicion by remember { mutableStateOf<RemoteMaldicion?>(null) }
     var selectedSala by remember { mutableStateOf<RemoteSala?>(null) }
-
-    // Asegúrate de tener el scope declarado arriba en la función App
-    // val scope = rememberCoroutineScope()
+    var selectedJefe by remember { mutableStateOf<RemoteJefe?>(null) }
+    var selectedPiso by remember { mutableStateOf<RemotePiso?>(null) }
 
     val syncAchievements: (isManualAction: Boolean) -> Unit = { isManualAction ->
         val user = currentUser
@@ -162,26 +168,24 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         println("Sync: Acción manual. Sobrescribiendo la nube con progreso local.")
                         syncManager.uploadAchievements(user.uid, localUnlockedIds)
                     } else {
-                        val remoteIds = syncManager.downloadAchievements(user.uid)
+                        val remoteIds = syncManager.downloadAchievements(user.uid) ?: return@launch println("Sync: Error de conexión, abortando sincronización")
 
-                        if (remoteIds != null) {
-                            val mergedIds = (localUnlockedIds + remoteIds).toSet()
+                        val mergedIds = (localUnlockedIds + remoteIds).toSet()
 
-                            if (mergedIds.size > localUnlockedIds.size) {
-                                println("Sync: Actualizando DB local con logros de la nube")
-                                mergedIds.forEach { id ->
-                                    repository.updateLogroStatus(id, true)
-                                }
-                                logros = repository.getAllLogros()
-                                selectedLogro?.let { current ->
-                                    selectedLogro = repository.getLogroById(current.id)
-                                }
+                        if (mergedIds.size > localUnlockedIds.size) {
+                            println("Sync: Actualizando DB local con logros de la nube")
+                            mergedIds.forEach { id ->
+                                repository.updateLogroStatus(id, true)
                             }
-
-                            if (mergedIds.size > remoteIds.size) {
-                                println("Sync: Subiendo progreso local fusionado a la nube")
-                                syncManager.uploadAchievements(user.uid, mergedIds.toList())
+                            logros = repository.getAllLogros()
+                            selectedLogro?.let { current ->
+                                selectedLogro = repository.getLogroById(current.id)
                             }
+                        }
+
+                        if (mergedIds.size > remoteIds.size) {
+                            println("Sync: Subiendo progreso local fusionado a la nube")
+                            syncManager.uploadAchievements(user.uid, mergedIds.toList())
                         }
                     }
                 } catch (e: Exception) {
@@ -206,6 +210,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                 repository.fetchAndSaveMaldiciones()
                 repository.fetchAndSaveSinergias()
                 repository.fetchAndSaveSalas()
+                repository.fetchAndSavePisos()
+                repository.fetchAndSaveJefes()
             }
             objetos = repository.getAllObjetos()
             personajes = repository.getAllPersonajes()
@@ -214,6 +220,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
             logros = repository.getAllLogros()
             maldiciones = repository.getAllMaldiciones()
             salas = repository.getAllSalas()
+            pisos = repository.getAllPisos()
+            jefes = repository.getAllJefes()
             
             isDataLoaded = true
             currentScreen = Screen.Menu
@@ -255,6 +263,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
 
     MaterialTheme(colors = darkColors) {
         Scaffold(
+            modifier = Modifier.systemBarsPadding(),
             scaffoldState = scaffoldState,
             topBar = {
                 TopAppBar(
@@ -262,7 +271,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             DynamicImage("dice-logo", Modifier.size(32.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Wiki TBOI", fontWeight = FontWeight.Bold)
+                            Text("Isaac Wiki", fontWeight = FontWeight.Bold)
                         }
                     },
                     backgroundColor = MaterialTheme.colors.surface,
@@ -361,16 +370,27 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                             navigateTo(Screen.ConsumiblesPorTipo)
                         }
                     )
+                    Screen.Perfil -> {
+                        PerfilScreen(
+                            user = currentUser,
+                            logrosTotales = logros.size,
+                            logrosDesbloqueados = logros.count { it.desbloqueado },
+                            objetosTotales = objetos.size,
+                            personajes = personajes,
+                            getDesbloqueos = { perId -> repository.getDesbloqueosByPersonaje(perId) },
+                            onSyncSteamClick = { showSteamDialog = true }
+                        )
+                    }
                     Screen.ConsumiblesPorTipo -> Column {
+                        val validTypes = listOf("Trinket", "Carta", "Píldora", "Pildora", "Consumible", "Pickup")
+
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(end = 8.dp)) {
                             Box(modifier = Modifier.weight(1f)) {
-                                val validTypes = listOf("Trinket", "Carta", "Pildora", "Consumible", "Pickup")
-
                                 if (selectedTipoConsumible in validTypes) {
                                     SearchBar(searchQueryConsumibles) { searchQueryConsumibles = it }
                                 }
                             }
-                            if (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta" || selectedTipoConsumible == "Píldora" || selectedTipoConsumible == "Pildora" || selectedTipoConsumible == "Consumible") {
+                            if (selectedTipoConsumible in validTypes) {
                                 IconButton(onClick = { isConsumiblesGridView = !isConsumiblesGridView }) {
                                     Icon(
                                         imageVector = if (isConsumiblesGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
@@ -380,7 +400,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                 }
                             }
                         }
-                        if (isConsumiblesGridView && (selectedTipoConsumible == "Trinket" || selectedTipoConsumible == "Carta" || selectedTipoConsumible == "Píldora" || selectedTipoConsumible == "Pildora" || selectedTipoConsumible == "Consumible")) {
+
+                        if (isConsumiblesGridView && selectedTipoConsumible in validTypes) {
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(80.dp),
                                 modifier = Modifier.fillMaxSize(),
@@ -392,7 +413,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                             .padding(4.dp)
                                             .aspectRatio(1f)
                                             .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
-                                            .clickable { 
+                                            .clickable {
                                                 selectedConsumible = cons
                                                 navigateTo(Screen.DetalleConsumible)
                                             },
@@ -527,6 +548,62 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                             selectedSala = it
                             navigateTo(Screen.DetalleSala)
                         }
+                    }
+                    Screen.Jefes -> {
+                        val filteredJefes = jefes.filter { it.nombre.contains(searchQueryJefes, ignoreCase = true) }
+                        Column {
+                            SearchBar(searchQueryJefes) { searchQueryJefes = it }
+                            ListScreen(filteredJefes, { it.nombre }, { "Vida Base: ${it.vida_base}" }, { getImagePath(it.id, "Jefe") }, 56) {
+                                selectedJefe = it
+                                navigateTo(Screen.DetalleJefe)
+                            }
+                        }
+                    }
+                    Screen.DetalleJefe -> selectedJefe?.let { jefe ->
+                        val pisosDelJefe = remember(jefe.id) { repository.getPisosByJefe(jefe.id) }
+
+                        // Calcular jefe anterior y siguiente
+                        val currentIndex = jefes.indexOfFirst { it.id == jefe.id }
+                        val prevJefe = if (currentIndex > 0) jefes[currentIndex - 1] else null
+                        val nextJefe = if (currentIndex != -1 && currentIndex < jefes.size - 1) jefes[currentIndex + 1] else null
+
+                        DetailJefeScreen(
+                            jefe = jefe,
+                            pisos = pisosDelJefe,
+                            prevJefe = prevJefe,
+                            nextJefe = nextJefe,
+                            onPisoClick = {
+                                selectedPiso = it
+                                navigateTo(Screen.DetallePiso)
+                            },
+                            onNavigate = {
+                                selectedJefe = it
+                            }
+                        )
+                    }
+                    Screen.Pisos -> ListScreen(
+                        itemList = pisos,
+                        getTitle = { it.nombre },
+                        getSubtitle = { it.descripcion.take(60) + "..." },
+                        getImageName = { getImagePath(it.id, "Chapter") },
+                        iconSize = 64
+                    ) { piso ->
+                        selectedPiso = piso
+                        navigateTo(Screen.DetallePiso)
+                    }
+
+                    Screen.DetallePiso -> selectedPiso?.let { piso ->
+                        // Consultamos la tabla intermedia usando el ID del piso seleccionado
+                        val jefesDelPiso = remember(piso.id) { repository.getJefesByPiso(piso.id) }
+
+                        DetailPisoScreen(
+                            piso = piso,
+                            jefes = jefesDelPiso,
+                            onJefeClick = { jefe ->
+                                selectedJefe = jefe
+                                navigateTo(Screen.DetalleJefe)
+                            }
+                        )
                     }
                     Screen.DetalleObjeto -> selectedObjeto?.let { obj ->
                         val relatedLogros = remember(obj.id) { repository.getLogrosByRewardObjeto(obj.id) }
@@ -672,6 +749,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                                 is RemoteConsumible -> { selectedConsumible = item.original; navigateTo(Screen.DetalleConsumible) }
                                 is RemoteLogro -> { selectedLogro = item.original; navigateTo(Screen.DetalleLogro) }
                                 is RemoteMaldicion -> { selectedMaldicion = item.original; navigateTo(Screen.DetalleMaldicion) }
+                                is RemoteJefe -> { selectedJefe = item.original; navigateTo(Screen.DetalleJefe) }
+                                is RemotePiso -> { selectedPiso = item.original; navigateTo(Screen.DetallePiso) }
                             }
                         }
                     )
@@ -867,6 +946,9 @@ fun getImagePath(id: Int, tipo: String, uid: Int? = null): String? {
         "Logro" -> "Logro_$id"
         "Maldicion" -> "maldicion_$id"
         "Sala" -> "sala_$id"
+        "Jefe" -> "jefe_$id"
+        "Piso" -> "piso_$id"
+        "Chapter" -> "chapter_$id"
         "Píldora", "Pildora" -> {
             val pillNumber = (id % 14) + 1
             "pill_$pillNumber"
@@ -1056,38 +1138,38 @@ fun DetailTransformacionScreen(trans: RemoteTransformacion, objetos: List<Remote
 
 @Composable
 fun DetailSalaScreen(sala: RemoteSala, objetos: List<RemoteObjeto>, onObjetoClick: (RemoteObjeto) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            DynamicImage(getImagePath(sala.id, "Sala") ?: "", Modifier.size(80.dp).padding(end = 16.dp))
-            Text(sala.nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
-        DescriptionText(text = sala.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
-        Spacer(Modifier.height(24.dp))
-        Text(text = "Objetos que pueden aparecer:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
-        Spacer(Modifier.height(8.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(64.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(8.dp)
-        ) {
-            items(objetos) { obj ->
-                Box(
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .aspectRatio(1f)
-                        .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
-                        .clickable { onObjetoClick(obj) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    DynamicImage(getImagePath(obj.id, "Objeto") ?: "", Modifier.size(40.dp))
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(64.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DynamicImage(getImagePath(sala.id, "Sala") ?: "", Modifier.size(80.dp).padding(end = 16.dp))
+                    Text(sala.nombre, style = MaterialTheme.typography.h4, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
                 }
+                Spacer(Modifier.height(24.dp))
+                Text(text = "Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+                DescriptionText(text = sala.descripcion, color = Color.White, style = MaterialTheme.typography.body1)
+                Spacer(Modifier.height(24.dp))
+                Text(text = "Objetos que pueden aparecer:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+            }
+        }
+        items(objetos) { obj ->
+            Box(
+                modifier = Modifier
+                    .padding(4.dp)
+                    .aspectRatio(1f)
+                    .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
+                    .clickable { onObjetoClick(obj) },
+                contentAlignment = Alignment.Center
+            ) {
+                DynamicImage(getImagePath(obj.id, "Objeto") ?: "", Modifier.size(40.dp))
             }
         }
     }
 }
-
 @Composable
 fun DetailPersonajeScreen(per: RemotePersonaje, stats: RemoteEstadisticas?, desbloqueos: List<DesbloqueoInfo>, unlockLogros: List<RemoteLogro>, imageName: String?, prevPersonaje: RemotePersonaje?, nextPersonaje: RemotePersonaje?, onLogroStatusChange: (Int, Boolean) -> Unit, onLogroClick: (RemoteLogro) -> Unit, onPremioClick: (DesbloqueoInfo) -> Unit, onNavigate: (RemotePersonaje) -> Unit) {
     val grayScaleFilter = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
@@ -1185,7 +1267,165 @@ fun HealthDisplay(stats: RemoteEstadisticas) {
         }
     }
 }
+@Composable
+fun PerfilScreen(
+    user: AuthUser?,
+    logrosTotales: Int,
+    logrosDesbloqueados: Int,
+    objetosTotales: Int,
+    personajes: List<RemotePersonaje>,
+    getDesbloqueos: (Int) -> List<DesbloqueoInfo>,
+    onSyncSteamClick: () -> Unit
+) {
+    val progress = if (logrosTotales > 0) logrosDesbloqueados.toFloat() / logrosTotales else 0f
+    val orangeColor = Color(0xFFFF4500)
+    var tabIndex by remember { mutableStateOf(0) } // 0 = Normal, 1 = Tainted
 
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(top = 16.dp, bottom = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = Icons.Default.AccountCircle,
+            contentDescription = "Avatar",
+            tint = orangeColor,
+            modifier = Modifier.size(100.dp).padding(bottom = 16.dp)
+        )
+        Text(user?.name ?: "Usuario Invitado", style = MaterialTheme.typography.h4, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(user?.email ?: "Inicia sesión para guardar tu progreso", color = Color.Gray, style = MaterialTheme.typography.body1)
+
+        Spacer(Modifier.height(32.dp))
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxWidth().height(160.dp).padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            item {
+                Card(backgroundColor = MaterialTheme.colors.surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(8.dp).fillMaxSize()) {
+                    Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Text("Logros", color = orangeColor, fontWeight = FontWeight.Bold)
+                        Text("$logrosDesbloqueados / $logrosTotales", color = Color.White, style = MaterialTheme.typography.h5, fontWeight = FontWeight.Bold)
+                        Text("${(progress * 100).toInt()}%", color = Color.Gray, style = MaterialTheme.typography.caption)
+                    }
+                }
+            }
+            item {
+                Card(backgroundColor = MaterialTheme.colors.surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(8.dp).fillMaxSize()) {
+                    Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Text("Objetos", color = orangeColor, fontWeight = FontWeight.Bold)
+                        Text("$objetosTotales", color = Color.White, style = MaterialTheme.typography.h5, fontWeight = FontWeight.Bold)
+                        Text("En Base de Datos", color = Color.Gray, style = MaterialTheme.typography.caption)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        Text("Marcas del Post-It", style = MaterialTheme.typography.h6, color = Color.White, modifier = Modifier.align(Alignment.Start).padding(horizontal = 16.dp))
+        Spacer(Modifier.height(16.dp))
+
+        TabRow(
+            selectedTabIndex = tabIndex,
+            backgroundColor = Color.Transparent,
+            contentColor = orangeColor,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Normales", fontWeight = FontWeight.Bold) })
+            Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Oscuros", fontWeight = FontWeight.Bold) })
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        val filteredPersonajes = personajes.filter { if (tabIndex == 0) !it.es_tainted else it.es_tainted }
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(filteredPersonajes.size) { index ->
+                val per = filteredPersonajes[index]
+
+                val marcas = getDesbloqueos(per.id)
+                val marcasDesbloqueadas = marcas.count { it.desbloqueado }
+
+                Card(
+                    backgroundColor = MaterialTheme.colors.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.width(280.dp).wrapContentHeight()
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            DynamicImage(getImagePath(per.id, "Personaje") ?: "", Modifier.size(40.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(per.nombre, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.subtitle1)
+                                Text("$marcasDesbloqueadas / ${marcas.size} completado", color = Color.Gray, style = MaterialTheme.typography.caption)
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        val grayScale = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            marcas.chunked(4).forEach { filaMarcas ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    filaMarcas.forEach { marca ->
+                                        val iconName = "marca_${marca.marcaId}"
+
+                                        // Contenedor que hace de "ranura" para la marca
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(
+                                                    color = if (marca.desbloqueado) Color.Transparent else Color.Black.copy(alpha = 0.4f),
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            DynamicImage(
+                                                name = iconName,
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .alpha(if (marca.desbloqueado) 1f else 0.4f),
+                                                colorFilter = if (marca.desbloqueado) null else grayScale
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+
+        // 4. Panel de Acciones Inferior
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text("Gestión de Cuenta", style = MaterialTheme.typography.h6, color = Color.White, modifier = Modifier.align(Alignment.Start))
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onSyncSteamClick,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                border = BorderStroke(1.dp, orangeColor),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.outlinedButtonColors(backgroundColor = Color.Transparent)
+            ) {
+                Icon(Icons.Default.Sync, contentDescription = null, tint = orangeColor)
+                Spacer(Modifier.width(12.dp))
+                Text("Sincronizar progreso con Steam", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
 @Composable
 fun StatRow(label: String, value: String) {
     Row(Modifier.padding(vertical = 2.dp)) {
@@ -1218,15 +1458,18 @@ fun DrawerContent(user: AuthUser?, onSignIn: () -> Unit, onSignOut: () -> Unit, 
             }
         }
         Spacer(Modifier.height(8.dp))
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
             Text("Sincronización", style = MaterialTheme.typography.caption, color = Color.Gray, fontWeight = FontWeight.Bold)
             DrawerItem("Sincronizar Steam", imageName = "steam-logo") { onSyncSteam() }
             Spacer(Modifier.height(16.dp))
             Text("Navegación", style = MaterialTheme.typography.caption, color = Color.Gray, fontWeight = FontWeight.Bold)
             DrawerItem("Inicio", imageName = "dice-logo") { onNavigate(Screen.Menu) }
+            DrawerItem("Mi Perfil", Icons.Default.Person) { onNavigate(Screen.Perfil) }
             Divider(color = Color.Gray.copy(alpha = 0.2f))
-            DrawerItem("Buscador Global", Icons.Default.Search) { onNavigate(Screen.GlobalSearch) }
+            DrawerItem("Buscador Global", imageName = "questionmark") { onNavigate(Screen.GlobalSearch) }
             DrawerItem("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
+            DrawerItem("Jefes", imageName = "jefe_1") { onNavigate(Screen.Jefes) }
+            DrawerItem("Pisos", imageName = "piso_1") { onNavigate(Screen.Pisos) }
             DrawerItem("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
             DrawerItem("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
             DrawerItem("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
@@ -1261,8 +1504,11 @@ fun LoadingScreen(status: String) {
 fun MenuScreen(onNavigate: (Screen) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         DynamicImage("dice-logo", Modifier.size(160.dp).padding(bottom = 24.dp))
-        MenuButton("Buscador Global", Icons.Default.Search) { onNavigate(Screen.GlobalSearch) }
+        MenuButton("Mi Perfil", Icons.Default.Person) { onNavigate(Screen.Perfil) }
+        MenuButton("Buscador Global", imageName = "questionmark") { onNavigate(Screen.GlobalSearch) }
         MenuButton("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
+        MenuButton("Jefes", imageName = "jefe_1") { onNavigate(Screen.Jefes) }
+        MenuButton("Pisos", imageName = "piso_1") { onNavigate(Screen.Pisos) }
         MenuButton("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
         MenuButton("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
         MenuButton("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
@@ -1441,6 +1687,170 @@ fun DetailConsumibleScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary)
                 }
             } else Spacer(Modifier.width(1.dp))
+        }
+    }
+}
+@Composable
+fun DetailJefeScreen(
+    jefe: RemoteJefe,
+    pisos: List<RemotePiso>,
+    prevJefe: RemoteJefe?,
+    nextJefe: RemoteJefe?,
+    onPisoClick: (RemotePiso) -> Unit,
+    onNavigate: (RemoteJefe) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .background(MaterialTheme.colors.background)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Imagen grande y centrada
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            DynamicImage(getImagePath(jefe.id, "Jefe") ?: "", Modifier.size(180.dp))
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            Text(jefe.nombre, style = MaterialTheme.typography.h3, color = MaterialTheme.colors.secondary, fontWeight = FontWeight.Bold)
+            Text("Vida Base: ${jefe.vida_base}", color = Color.Gray, style = MaterialTheme.typography.subtitle1)
+        }
+
+        Spacer(Modifier.height(32.dp))
+        Text("Descripción:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+        DescriptionText(jefe.descripcion)
+
+        Spacer(Modifier.height(16.dp))
+        Text("Comportamiento:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+        DescriptionText(jefe.comportamiento)
+
+        if (pisos.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            Text("Aparece en los subpisos:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+            Spacer(Modifier.height(8.dp))
+
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                pisos.forEach { piso ->
+                    Row(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .clickable { onPisoClick(piso) }
+                            .background(MaterialTheme.colors.surface, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DynamicImage(getImagePath(piso.id, "Chapter") ?: "", Modifier.size(32.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(piso.nombre, color = Color.White, style = MaterialTheme.typography.body2)
+                    }
+                }
+            }
+        }
+
+        jefe.notas?.let {
+            Spacer(Modifier.height(24.dp))
+            Text("Notas:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.subtitle1)
+            DescriptionText(it)
+        }
+
+        Spacer(Modifier.height(40.dp))
+        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            if (prevJefe != null) {
+                Row(Modifier.clickable { onNavigate(prevJefe) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    DynamicImage(getImagePath(prevJefe.id, "Jefe") ?: "", Modifier.size(48.dp))
+                }
+            } else Spacer(Modifier.width(1.dp))
+
+            Text(text = "ID: ${jefe.id}", color = Color.Gray.copy(alpha = 0.5f), style = MaterialTheme.typography.caption)
+
+            if (nextJefe != null) {
+                Row(Modifier.clickable { onNavigate(nextJefe) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DynamicImage(getImagePath(nextJefe.id, "Jefe") ?: "", Modifier.size(48.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colors.secondary)
+                }
+            } else Spacer(Modifier.width(1.dp))
+        }
+    }
+}
+
+@Composable
+fun DetailPisoScreen(piso: RemotePiso, jefes: List<RemoteJefe>, onJefeClick: (RemoteJefe) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colors.background)
+            .verticalScroll(rememberScrollState())
+    ) {
+        DynamicImage(
+            name = getImagePath(piso.id, "Piso") ?: "",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp) // Altura fija para el banner superior
+        )
+
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Icono de la categoría (Chapter) al lado del nombre
+                DynamicImage(
+                    name = getImagePath(piso.id, "Chapter") ?: "",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .padding(end = 12.dp)
+                )
+                Text(
+                    text = piso.nombre,
+                    style = MaterialTheme.typography.h4,
+                    color = MaterialTheme.colors.secondary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = "Descripción:",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colors.secondary,
+                style = MaterialTheme.typography.subtitle1
+            )
+            Spacer(Modifier.height(8.dp))
+            DescriptionText(piso.descripcion)
+
+            if (jefes.isNotEmpty()) {
+                Spacer(Modifier.height(32.dp))
+                Text(
+                    text = "Jefes de este Piso:",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colors.secondary,
+                    style = MaterialTheme.typography.h6
+                )
+                Spacer(Modifier.height(12.dp))
+                jefes.forEach { jefe ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJefeClick(jefe) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DynamicImage(
+                            name = getImagePath(jefe.id, "Jefe") ?: "",
+                            modifier = Modifier
+                                .size(48.dp)
+                                .padding(end = 12.dp)
+                        )
+                        Text(text = jefe.nombre, color = Color.White, style = MaterialTheme.typography.body1)
+                    }
+                    Divider(color = Color.DarkGray.copy(alpha = 0.5f))
+                }
+            }
         }
     }
 }

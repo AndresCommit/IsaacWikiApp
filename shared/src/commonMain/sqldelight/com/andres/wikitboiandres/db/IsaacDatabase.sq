@@ -118,6 +118,29 @@ CREATE TABLE Sala_Objeto (
     FOREIGN KEY (objeto_id) REFERENCES Objetos(id) ON DELETE CASCADE
 );
 
+CREATE TABLE Pisos (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    descripcion TEXT NOT NULL
+);
+
+CREATE TABLE Jefes (
+    id INTEGER PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    vida_base INTEGER NOT NULL,
+    descripcion TEXT NOT NULL,
+    comportamiento TEXT NOT NULL,
+    notas TEXT NOT NULL
+);
+
+CREATE TABLE Jefe_Piso (
+    jefe_id INTEGER NOT NULL,
+    piso_id INTEGER NOT NULL,
+    PRIMARY KEY (jefe_id, piso_id),
+    FOREIGN KEY (jefe_id) REFERENCES Jefes(id) ON DELETE CASCADE,
+    FOREIGN KEY (piso_id) REFERENCES Pisos(id) ON DELETE CASCADE
+);
+
 insertPersonaje:
 INSERT OR REPLACE INTO Personajes(id, nombre, descripcion, es_tainted, metodo_desbloqueo)
 VALUES (?, ?, ?, ?, ?);
@@ -275,3 +298,34 @@ getSalasByObjeto:
 SELECT Salas.* FROM Salas
 JOIN Sala_Objeto ON Salas.id = Sala_Objeto.sala_id
 WHERE Sala_Objeto.objeto_id = ?;
+
+insertPiso:
+INSERT OR REPLACE INTO Pisos(id, nombre, descripcion)
+VALUES (?, ?, ?);
+
+selectAllPisos:
+SELECT * FROM Pisos;
+
+getPisoById:
+SELECT * FROM Pisos WHERE id = ?;
+
+insertJefe:
+INSERT OR REPLACE INTO Jefes (id, nombre, vida_base, descripcion, comportamiento, notas)
+VALUES (?, ?, ?, ?, ?, ?);
+
+insertJefePiso:
+INSERT OR REPLACE INTO Jefe_Piso (jefe_id, piso_id)
+VALUES (?, ?);
+
+getJefesByPiso:
+SELECT Jefes.* FROM Jefes
+JOIN Jefe_Piso ON Jefes.id = Jefe_Piso.jefe_id
+WHERE Jefe_Piso.piso_id = ?;
+
+getPisosByJefe:
+SELECT Pisos.* FROM Pisos
+JOIN Jefe_Piso ON Pisos.id = Jefe_Piso.piso_id
+WHERE Jefe_Piso.jefe_id = ?;
+
+selectAllJefes:
+SELECT * FROM Jefes;

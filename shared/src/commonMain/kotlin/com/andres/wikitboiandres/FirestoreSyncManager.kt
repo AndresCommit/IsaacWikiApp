@@ -16,11 +16,10 @@ class FirestoreSyncManager : SyncManager {
         if (userId.isBlank()) return
         try {
             val document = collection.document(userId)
-            // Guardamos usando la clase serializable
             document.set(UserAchievements(achievementIds), merge = true)
-            println("Sync: Subida exitosa a la nube")
+            println("Sincro: Subida exitosa a la nube")
         } catch (e: Exception) {
-            println("Sync: Error uploadAchievements: ${e.message}")
+            println("Sincro: Error en uploadAchievements: ${e.message}")
         }
     }
 

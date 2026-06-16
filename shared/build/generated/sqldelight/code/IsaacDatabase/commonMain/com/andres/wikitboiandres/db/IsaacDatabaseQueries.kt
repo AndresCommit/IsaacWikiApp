@@ -654,6 +654,131 @@ public class IsaacDatabaseQueries(
     )
   }
 
+  public fun <T : Any> selectAllPisos(mapper: (
+    id: Long,
+    nombre: String,
+    descripcion: String,
+  ) -> T): Query<T> = Query(11_086_388, arrayOf("Pisos"), driver, "IsaacDatabase.sq",
+      "selectAllPisos", "SELECT Pisos.id, Pisos.nombre, Pisos.descripcion FROM Pisos") { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!
+    )
+  }
+
+  public fun selectAllPisos(): Query<Pisos> = selectAllPisos { id, nombre, descripcion ->
+    Pisos(
+      id,
+      nombre,
+      descripcion
+    )
+  }
+
+  public fun <T : Any> getPisoById(id: Long, mapper: (
+    id: Long,
+    nombre: String,
+    descripcion: String,
+  ) -> T): Query<T> = GetPisoByIdQuery(id) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!
+    )
+  }
+
+  public fun getPisoById(id: Long): Query<Pisos> = getPisoById(id) { id_, nombre, descripcion ->
+    Pisos(
+      id_,
+      nombre,
+      descripcion
+    )
+  }
+
+  public fun <T : Any> getJefesByPiso(piso_id: Long, mapper: (
+    id: Long,
+    nombre: String,
+    vida_base: Long,
+    descripcion: String,
+    comportamiento: String,
+    notas: String,
+  ) -> T): Query<T> = GetJefesByPisoQuery(piso_id) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getLong(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!
+    )
+  }
+
+  public fun getJefesByPiso(piso_id: Long): Query<Jefes> = getJefesByPiso(piso_id) { id, nombre,
+      vida_base, descripcion, comportamiento, notas ->
+    Jefes(
+      id,
+      nombre,
+      vida_base,
+      descripcion,
+      comportamiento,
+      notas
+    )
+  }
+
+  public fun <T : Any> getPisosByJefe(jefe_id: Long, mapper: (
+    id: Long,
+    nombre: String,
+    descripcion: String,
+  ) -> T): Query<T> = GetPisosByJefeQuery(jefe_id) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!
+    )
+  }
+
+  public fun getPisosByJefe(jefe_id: Long): Query<Pisos> = getPisosByJefe(jefe_id) { id, nombre,
+      descripcion ->
+    Pisos(
+      id,
+      nombre,
+      descripcion
+    )
+  }
+
+  public fun <T : Any> selectAllJefes(mapper: (
+    id: Long,
+    nombre: String,
+    vida_base: Long,
+    descripcion: String,
+    comportamiento: String,
+    notas: String,
+  ) -> T): Query<T> = Query(5_413_295, arrayOf("Jefes"), driver, "IsaacDatabase.sq",
+      "selectAllJefes",
+      "SELECT Jefes.id, Jefes.nombre, Jefes.vida_base, Jefes.descripcion, Jefes.comportamiento, Jefes.notas FROM Jefes") {
+      cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getLong(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!
+    )
+  }
+
+  public fun selectAllJefes(): Query<Jefes> = selectAllJefes { id, nombre, vida_base, descripcion,
+      comportamiento, notas ->
+    Jefes(
+      id,
+      nombre,
+      vida_base,
+      descripcion,
+      comportamiento,
+      notas
+    )
+  }
+
   public fun insertPersonaje(
     id: Long?,
     nombre: String,
@@ -932,6 +1057,61 @@ public class IsaacDatabaseQueries(
         }
     notifyQueries(-1_732_782_720) { emit ->
       emit("Sala_Objeto")
+    }
+  }
+
+  public fun insertPiso(
+    id: Long?,
+    nombre: String,
+    descripcion: String,
+  ) {
+    driver.execute(-1_207_983_319, """
+        |INSERT OR REPLACE INTO Pisos(id, nombre, descripcion)
+        |VALUES (?, ?, ?)
+        """.trimMargin(), 3) {
+          bindLong(0, id)
+          bindString(1, nombre)
+          bindString(2, descripcion)
+        }
+    notifyQueries(-1_207_983_319) { emit ->
+      emit("Pisos")
+    }
+  }
+
+  public fun insertJefe(
+    id: Long?,
+    nombre: String,
+    vida_base: Long,
+    descripcion: String,
+    comportamiento: String,
+    notas: String,
+  ) {
+    driver.execute(-1_208_166_322, """
+        |INSERT OR REPLACE INTO Jefes (id, nombre, vida_base, descripcion, comportamiento, notas)
+        |VALUES (?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 6) {
+          bindLong(0, id)
+          bindString(1, nombre)
+          bindLong(2, vida_base)
+          bindString(3, descripcion)
+          bindString(4, comportamiento)
+          bindString(5, notas)
+        }
+    notifyQueries(-1_208_166_322) { emit ->
+      emit("Jefes")
+    }
+  }
+
+  public fun insertJefePiso(jefe_id: Long, piso_id: Long) {
+    driver.execute(1_111_619_459, """
+        |INSERT OR REPLACE INTO Jefe_Piso (jefe_id, piso_id)
+        |VALUES (?, ?)
+        """.trimMargin(), 2) {
+          bindLong(0, jefe_id)
+          bindLong(1, piso_id)
+        }
+    notifyQueries(1_111_619_459) { emit ->
+      emit("Jefe_Piso")
     }
   }
 
@@ -1278,5 +1458,74 @@ public class IsaacDatabaseQueries(
     }
 
     override fun toString(): String = "IsaacDatabase.sq:getSalasByObjeto"
+  }
+
+  private inner class GetPisoByIdQuery<out T : Any>(
+    public val id: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("Pisos", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("Pisos", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
+        driver.executeQuery(-1_170_709_086,
+        """SELECT Pisos.id, Pisos.nombre, Pisos.descripcion FROM Pisos WHERE id = ?""", mapper, 1) {
+      bindLong(0, id)
+    }
+
+    override fun toString(): String = "IsaacDatabase.sq:getPisoById"
+  }
+
+  private inner class GetJefesByPisoQuery<out T : Any>(
+    public val piso_id: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("Jefes", "Jefe_Piso", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("Jefes", "Jefe_Piso", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
+        driver.executeQuery(-1_995_997_974, """
+    |SELECT Jefes.id, Jefes.nombre, Jefes.vida_base, Jefes.descripcion, Jefes.comportamiento, Jefes.notas FROM Jefes
+    |JOIN Jefe_Piso ON Jefes.id = Jefe_Piso.jefe_id
+    |WHERE Jefe_Piso.piso_id = ?
+    """.trimMargin(), mapper, 1) {
+      bindLong(0, piso_id)
+    }
+
+    override fun toString(): String = "IsaacDatabase.sq:getJefesByPiso"
+  }
+
+  private inner class GetPisosByJefeQuery<out T : Any>(
+    public val jefe_id: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("Pisos", "Jefe_Piso", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("Pisos", "Jefe_Piso", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> =
+        driver.executeQuery(1_842_088_660, """
+    |SELECT Pisos.id, Pisos.nombre, Pisos.descripcion FROM Pisos
+    |JOIN Jefe_Piso ON Pisos.id = Jefe_Piso.piso_id
+    |WHERE Jefe_Piso.jefe_id = ?
+    """.trimMargin(), mapper, 1) {
+      bindLong(0, jefe_id)
+    }
+
+    override fun toString(): String = "IsaacDatabase.sq:getPisosByJefe"
   }
 }
