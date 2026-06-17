@@ -165,15 +165,13 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                     val localUnlockedIds = localLogros.filter { it.desbloqueado }.map { it.id }
 
                     if (isManualAction) {
-                        println("Sync: Acción manual. Sobrescribiendo la nube con progreso local.")
                         syncManager.uploadAchievements(user.uid, localUnlockedIds)
                     } else {
-                        val remoteIds = syncManager.downloadAchievements(user.uid) ?: return@launch println("Sync: Error de conexión, abortando sincronización")
+                        val remoteIds = syncManager.downloadAchievements(user.uid) ?: return@launch println("Error de conexión")
 
                         val mergedIds = (localUnlockedIds + remoteIds).toSet()
 
                         if (mergedIds.size > localUnlockedIds.size) {
-                            println("Sync: Actualizando DB local con logros de la nube")
                             mergedIds.forEach { id ->
                                 repository.updateLogroStatus(id, true)
                             }
@@ -184,12 +182,11 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         }
 
                         if (mergedIds.size > remoteIds.size) {
-                            println("Sync: Subiendo progreso local fusionado a la nube")
                             syncManager.uploadAchievements(user.uid, mergedIds.toList())
                         }
                     }
                 } catch (e: Exception) {
-                    println("Sync: Error inesperado: ${e.message}")
+                    println("Error inesperado: ${e.message}")
                 }
             }
         }
@@ -1381,7 +1378,6 @@ fun PerfilScreen(
                                     filaMarcas.forEach { marca ->
                                         val iconName = "marca_${marca.marcaId}"
 
-                                        // Contenedor que hace de "ranura" para la marca
                                         Box(
                                             modifier = Modifier
                                                 .size(36.dp)
@@ -1470,8 +1466,8 @@ fun DrawerContent(user: AuthUser?, onSignIn: () -> Unit, onSignOut: () -> Unit, 
             DrawerItem("Buscador Global", imageName = "questionmark") { onNavigate(Screen.GlobalSearch) }
             DrawerItem("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
             DrawerItem("Jefes", imageName = "jefe_1") { onNavigate(Screen.Jefes) }
-            DrawerItem("Pisos", imageName = "piso_1") { onNavigate(Screen.Pisos) }
-            DrawerItem("Salas de Items", imageName = "chapter_1") { onNavigate(Screen.Salas) }
+            DrawerItem("Pisos", imageName = "chapter_1") { onNavigate(Screen.Pisos) }
+            DrawerItem("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
             DrawerItem("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
             DrawerItem("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
             DrawerItem("Transformaciones", imageName = "Transformation_1") { onNavigate(Screen.Transformaciones) }
@@ -1509,8 +1505,8 @@ fun MenuScreen(onNavigate: (Screen) -> Unit) {
         MenuButton("Buscador Global", imageName = "questionmark") { onNavigate(Screen.GlobalSearch) }
         MenuButton("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
         MenuButton("Jefes", imageName = "jefe_1") { onNavigate(Screen.Jefes) }
-        MenuButton("Pisos", imageName = "piso_1") { onNavigate(Screen.Pisos) }
-        MenuButton("Salas de Items", imageName = "chapter_1") { onNavigate(Screen.Salas) }
+        MenuButton("Pisos", imageName = "chapter_1") { onNavigate(Screen.Pisos) }
+        MenuButton("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
         MenuButton("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
         MenuButton("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
         MenuButton("Transformaciones", imageName = "Transformation_1") { onNavigate(Screen.Transformaciones) }
