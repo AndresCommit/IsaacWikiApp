@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "381449892791-avie4fkh3gg3bs1r2hoahpar8p99p9l8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.andres.wikitboiandres",
+            "certificate_hash": "6ba3b3c39ed8b8f0c264f284597e81fa5d85b735"
+          }
+        },
+        {
           "client_id": "381449892791-1nkoiibk9qgcsbspdecnkiu2gdrb2nk1.apps.googleusercontent.com",
           "client_type": 3
         }
