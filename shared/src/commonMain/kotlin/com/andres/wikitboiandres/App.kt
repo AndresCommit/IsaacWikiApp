@@ -197,7 +197,7 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     LaunchedEffect(Unit) {
         try {
             if (repository.getAllObjetosCount() == 0L) {
-                status = "Descargando datos..."
+                status = "Cargando..."
                 repository.fetchAndSaveObjetos()
                 repository.fetchAndSaveConsumibles()
                 repository.fetchAndSavePersonajes()
@@ -256,6 +256,8 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
     val navigateBack = {
         if (navigationStack.isNotEmpty()) {
             currentScreen = navigationStack.removeAt(navigationStack.size - 1)
+        } else {
+            currentScreen = Screen.Menu
         }
     }
 
@@ -544,9 +546,10 @@ fun App(database: IsaacDatabase, authManager: AuthManager, syncManager: SyncMana
                         }
                     }
                     Screen.Salas -> {
-                        ListScreen(salas, { it.nombre }, { it.descripcion.take(60) + "..." }, { getImagePath(it.id, "Sala") }, 48) {
+                        ListScreen(salas, { it.nombre }, { "" }, { getImagePath(it.id, "Sala") }, 48) {
                             selectedSala = it
                             navigateTo(Screen.DetalleSala)
+
                         }
                     }
                     Screen.Jefes -> {
@@ -881,7 +884,6 @@ fun GlobalSearchScreen(
         SearchBar(query, onQueryChange)
         
         Box(Modifier.fillMaxSize()) {
-            // LOGO DE FONDO (Permanece al buscar)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 DynamicImage("dice-logo", Modifier.size(240.dp).alpha(0.1f))
             }
@@ -889,7 +891,6 @@ fun GlobalSearchScreen(
             if (query.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        // DynamicImage("dice-logo", Modifier.size(150.dp)) // Eliminado a petición para que solo se vea el tenue
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "Escribe para buscar objetos, personajes, logros, maldiciones...",
@@ -1002,7 +1003,7 @@ fun DetailObjetoScreen(
 
         if (salas.isNotEmpty()) {
             Spacer(Modifier.height(32.dp))
-            Text(text = "Salas de Items:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
+            Text(text = "Puede aparecer en:", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.secondary, style = MaterialTheme.typography.h6)
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 salas.forEach { sala ->
@@ -1470,11 +1471,11 @@ fun DrawerContent(user: AuthUser?, onSignIn: () -> Unit, onSignOut: () -> Unit, 
             DrawerItem("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
             DrawerItem("Jefes", imageName = "jefe_1") { onNavigate(Screen.Jefes) }
             DrawerItem("Pisos", imageName = "piso_1") { onNavigate(Screen.Pisos) }
-            DrawerItem("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
+            DrawerItem("Salas de Items", imageName = "chapter_1") { onNavigate(Screen.Salas) }
             DrawerItem("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
             DrawerItem("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
             DrawerItem("Transformaciones", imageName = "Transformation_1") { onNavigate(Screen.Transformaciones) }
-            DrawerItem("Logros", imageName = "Logro_1") { onNavigate(Screen.Logros) }
+            DrawerItem("Logros", imageName = "trophy") { onNavigate(Screen.Logros) }
             DrawerItem("Maldiciones", imageName = "maldicion_1") { onNavigate(Screen.Maldiciones) }
         }
     }
@@ -1509,11 +1510,11 @@ fun MenuScreen(onNavigate: (Screen) -> Unit) {
         MenuButton("Objetos", imageName = "collectibles_001") { onNavigate(Screen.Objetos) }
         MenuButton("Jefes", imageName = "jefe_1") { onNavigate(Screen.Jefes) }
         MenuButton("Pisos", imageName = "piso_1") { onNavigate(Screen.Pisos) }
-        MenuButton("Salas de Items", imageName = "sala_1") { onNavigate(Screen.Salas) }
+        MenuButton("Salas de Items", imageName = "chapter_1") { onNavigate(Screen.Salas) }
         MenuButton("Personajes", imageName = "Character_1_icon") { onNavigate(Screen.Personajes) }
         MenuButton("Consumibles", imageName = "collectibles_2001") { onNavigate(Screen.SubMenuConsumibles) }
         MenuButton("Transformaciones", imageName = "Transformation_1") { onNavigate(Screen.Transformaciones) }
-        MenuButton("Logros", imageName = "Logro_1") { onNavigate(Screen.Logros) }
+        MenuButton("Logros", imageName = "trophy") { onNavigate(Screen.Logros) }
         MenuButton("Maldiciones", imageName = "maldicion_1") { onNavigate(Screen.Maldiciones) }
     }
 }
@@ -1706,7 +1707,6 @@ fun DetailJefeScreen(
             .background(MaterialTheme.colors.background)
             .verticalScroll(rememberScrollState())
     ) {
-        // Imagen grande y centrada
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             DynamicImage(getImagePath(jefe.id, "Jefe") ?: "", Modifier.size(180.dp))
         }
@@ -1790,7 +1790,7 @@ fun DetailPisoScreen(piso: RemotePiso, jefes: List<RemoteJefe>, onJefeClick: (Re
             name = getImagePath(piso.id, "Piso") ?: "",
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp) // Altura fija para el banner superior
+                .height(200.dp)
         )
 
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1798,7 +1798,6 @@ fun DetailPisoScreen(piso: RemotePiso, jefes: List<RemoteJefe>, onJefeClick: (Re
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Icono de la categoría (Chapter) al lado del nombre
                 DynamicImage(
                     name = getImagePath(piso.id, "Chapter") ?: "",
                     modifier = Modifier
